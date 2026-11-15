@@ -1,7 +1,7 @@
+#version 300 es
 // Copyright (c) 2026 Paul Butcher. All rights reserved.
 // Released under Apache 2.0 license as described in the file LICENSE.
 // Generated from Inkproof.Gpu.Shader. Do not edit.
-#version 300 es
 precision highp float;
 in vec2 a_position;
 uniform vec2 u_slope;

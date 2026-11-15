@@ -29,7 +29,8 @@ def specs : List Spec := [
   ⟨"useProgram", 3, [.u32]⟩,
   ⟨"uniform", 4, [.u32, .words]⟩,
   ⟨"draw", 5, [.u32, .u32]⟩,
-  ⟨"clear", 6, [.u32]⟩
+  ⟨"clear", 6, [.u32]⟩,
+  ⟨"createProgram", 7, [.u32]⟩
 ]
 
 def specOf (op : UInt8) : Option Spec := specs.find? (·.op == op)

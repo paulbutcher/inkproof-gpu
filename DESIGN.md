@@ -4,7 +4,7 @@
 
 `Inkproof.Gpu.specs` is the one definition of the command set: each command has a name, an opcode and a list of operand kinds, and nothing in it names a graphics API. The Lean encoder and decoder are driven by the table, and `Inkproof.Gpu.js` prints the JavaScript decoder and interpreter from it, so they cannot drift. The WebGL2 realisation of each command lives only in the JavaScript printer (`webglBody`), which is where a WebGPU backend would differ.
 
-A command list is one buffer: a little-endian 32-bit command count, then each command as an opcode byte followed by its operands. `generated/gpu.js` is the printed output; `lake exe gen generated` regenerates it, and the GLSL shaders beside it and the JavaScript tests fail when it is stale.
+A command list is one buffer: a little-endian 32-bit command count, then each command as an opcode byte followed by its operands. `generated/gpu.js` is the printed output; `lake exe gen generated` regenerates it. The GLSL shaders beside it and the JavaScript tests fail when it is stale. `createProgram` builds the renderer's one program from the shader sources embedded in `gpu.js`; `uniform` names a uniform by its position in `uniformNames` and sets it with as many floats as it is given, and `draw` reads each vertex as two floats.
 
 ## Compiling a display list
 

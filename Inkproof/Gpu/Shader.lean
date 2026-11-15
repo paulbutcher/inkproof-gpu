@@ -220,11 +220,13 @@ instance (s : Shader) : Decidable s.WellTyped := by
 def Var.glsl (qualifier : String) (v : Var) : String :=
   s!"{qualifier} {tyGlsl v.dim} {v.name};"
 
+/-- `#version` must be the first line: WebGL2 rejects anything before it, comments included. -/
 def glslHeader : List String :=
-  ["// Copyright (c) 2026 Paul Butcher. All rights reserved.",
+  ["#version 300 es",
+   "// Copyright (c) 2026 Paul Butcher. All rights reserved.",
    "// Released under Apache 2.0 license as described in the file LICENSE.",
    "// Generated from Inkproof.Gpu.Shader. Do not edit.",
-   "#version 300 es", "precision highp float;"]
+   "precision highp float;"]
 
 /-- GLSL ES 3.00 source. -/
 def Shader.glsl (s : Shader) : String :=

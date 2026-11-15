@@ -3,6 +3,7 @@ Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import Inkproof.Gpu.Wire
+import Inkproof.Gpu.Shaders
 
 namespace Inkproof.Gpu
 
@@ -14,28 +15,40 @@ theorem FieldTy.jsRead_u32 : FieldTy.u32.jsRead = "r.u32()" := rfl
 
 theorem FieldTy.jsRead_words : FieldTy.words.jsRead = "r.words()" := rfl
 
-/-- The WebGL2 realisation of each command, over `gl`, the context, and `s`, the interpreter state. -/
+/-- The uniforms of the renderer's program, in the order `uniform` numbers them: those of the vertex shader, then those of the fragment shader. -/
+def uniformNames : List String :=
+  (vertexShader.uniforms ++ fragmentShader.uniforms).map (·.name)
+
+theorem uniformNames_eq : uniformNames = ["u_slope", "u_offset", "u_colour"] := rfl
+
+/-- The WebGL2 realisation of each command, over `gl`, the context, and `s`, the interpreter state. `createProgram` builds the renderer's program, and `uniform` takes the number of a uniform of that program; `draw` reads each vertex as two floats bound to attribute 0. -/
 def webglBody : String → List String
   | "createBuffer" => ["s.buffers.set(a[0], gl.createBuffer());"]
   | "bufferData" => ["gl.bindBuffer(gl.ARRAY_BUFFER, s.buffers.get(a[0]));",
       "gl.bufferData(gl.ARRAY_BUFFER, a[1], gl.STATIC_DRAW);"]
   | "deleteBuffer" => ["gl.deleteBuffer(s.buffers.get(a[0]));", "s.buffers.delete(a[0]);"]
-  | "useProgram" => ["gl.useProgram(s.programs.get(a[0]));"]
-  | "uniform" => ["gl.uniform4fv(s.uniforms.get(a[0]), new Float32Array(a[1].buffer));"]
+  | "useProgram" => ["s.current = s.programs.get(a[0]);", "gl.useProgram(s.current.program);"]
+  | "uniform" => ["const w = new Float32Array(a[1].buffer);",
+      "gl[\"uniform\" + w.length + \"fv\"](s.current.uniforms[a[0]], w);"]
   | "draw" => ["gl.bindBuffer(gl.ARRAY_BUFFER, s.buffers.get(a[0]));",
+      "gl.enableVertexAttribArray(0);", "gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);",
       "gl.drawArrays(gl.TRIANGLES, 0, a[1]);"]
   | "clear" => ["gl.clearColor((a[0] >>> 24) / 255, ((a[0] >>> 16) & 255) / 255,",
       "  ((a[0] >>> 8) & 255) / 255, (a[0] & 255) / 255);", "gl.clear(gl.COLOR_BUFFER_BIT);"]
+  | "createProgram" => ["s.programs.set(a[0], buildProgram(gl));"]
   | _ => []
 
 theorem webglBody_createBuffer :
     webglBody "createBuffer" = ["s.buffers.set(a[0], gl.createBuffer());"] := rfl
 
 theorem webglBody_useProgram :
-    webglBody "useProgram" = ["gl.useProgram(s.programs.get(a[0]));"] := rfl
+    webglBody "useProgram" = ["s.current = s.programs.get(a[0]);", "gl.useProgram(s.current.program);"] := rfl
+
+theorem webglBody_createProgram :
+    webglBody "createProgram" = ["s.programs.set(a[0], buildProgram(gl));"] := rfl
 
 theorem webglBody_unknown (n : String) (h : n ∉ ["createBuffer", "bufferData", "deleteBuffer",
-    "useProgram", "uniform", "draw", "clear"]) : webglBody n = [] := by
+    "useProgram", "uniform", "draw", "clear", "createProgram"]) : webglBody n = [] := by
   unfold webglBody
   split <;> simp_all
 
@@ -77,6 +90,28 @@ class Reader {
   done() { return this.p === this.v.byteLength; }
 }
 
+const VERTEX_SOURCE = " ++ vertexShader.glsl.quote ++ ";
+const FRAGMENT_SOURCE = " ++ fragmentShader.glsl.quote ++ ";
+const UNIFORM_NAMES = [" ++ ", ".intercalate (uniformNames.map String.quote) ++ "];
+
+function compile(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+  return shader;
+}
+
+function buildProgram(gl) {
+  const program = gl.createProgram();
+  gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERTEX_SOURCE));
+  gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAGMENT_SOURCE));
+  gl.bindAttribLocation(program, 0, \"a_position\");
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+  return { program, uniforms: UNIFORM_NAMES.map(n => gl.getUniformLocation(program, n)) };
+}
+
 function decodeCommand(r) {
   switch (r.u8()) {
 " ++ decode ++ "
@@ -94,7 +129,7 @@ export function decode(bytes) {
 }
 
 export function newState() {
-  return { buffers: new Map(), programs: new Map(), uniforms: new Map() };
+  return { buffers: new Map(), programs: new Map(), current: null };
 }
 
 export function run(gl, s, bytes) {

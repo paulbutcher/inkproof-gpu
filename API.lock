@@ -224,6 +224,8 @@ def Inkproof.Gpu.specOf : UInt8 → Option Inkproof.Gpu.Spec
 theorem Inkproof.Gpu.specOf_eq_find : ∀ (op : UInt8), Inkproof.Gpu.specOf op = List.find? (fun x => x.op == op) Inkproof.Gpu.specs
 def Inkproof.Gpu.specs : List Inkproof.Gpu.Spec
 def Inkproof.Gpu.stageTile : (Inkproof.Scene.Command → List UInt32) → Inkproof.Gpu.Stage → Inkproof.Gpu.Tile → Inkproof.Gpu.Stage
+def Inkproof.Gpu.uniformNames : List String
+theorem Inkproof.Gpu.uniformNames_eq : Inkproof.Gpu.uniformNames = ["u_slope", "u_offset", "u_colour"]
 def Inkproof.Gpu.uploads : Nat → List (List UInt32) → List Inkproof.Gpu.Op
 def Inkproof.Gpu.vertexShader : Inkproof.Gpu.Shader.Shader
 theorem Inkproof.Gpu.vertexShader_placement : ∀ (v : Rat), 0 < v → ∀ (env : String → Option (List Float32)) (x y a b c d : Float32) (tx ty : Rat), env "a_position" = Option.some [x, y] → env "u_slope" = Option.some [a, b] → env "u_offset" = Option.some [c, d] → Inkproof.Gpu.Placeable v x a c tx → Inkproof.Gpu.Placeable v y b d ty → ∃ X Y, Inkproof.Gpu.vertexShader.run env = Option.some [("gl_Position", [X, Y, 0, 1])] ∧ Inkproof.Gpu.Placed v X tx ∧ Inkproof.Gpu.Placed v Y ty
@@ -231,5 +233,6 @@ theorem Inkproof.Gpu.vertexShader_run : ∀ (env : String → Option (List Float
 theorem Inkproof.Gpu.vertexShader_wellTyped : Inkproof.Gpu.vertexShader.WellTyped
 def Inkproof.Gpu.webglBody : String → List String
 theorem Inkproof.Gpu.webglBody_createBuffer : Inkproof.Gpu.webglBody "createBuffer" = ["s.buffers.set(a[0], gl.createBuffer());"]
-theorem Inkproof.Gpu.webglBody_unknown : ∀ (n : String), ¬n ∈ ["createBuffer", "bufferData", "deleteBuffer", "useProgram", "uniform", "draw", "clear"] → Inkproof.Gpu.webglBody n = []
-theorem Inkproof.Gpu.webglBody_useProgram : Inkproof.Gpu.webglBody "useProgram" = ["gl.useProgram(s.programs.get(a[0]));"]
+theorem Inkproof.Gpu.webglBody_createProgram : Inkproof.Gpu.webglBody "createProgram" = ["s.programs.set(a[0], buildProgram(gl));"]
+theorem Inkproof.Gpu.webglBody_unknown : ∀ (n : String), ¬n ∈ ["createBuffer", "bufferData", "deleteBuffer", "useProgram", "uniform", "draw", "clear", "createProgram"] → Inkproof.Gpu.webglBody n = []
+theorem Inkproof.Gpu.webglBody_useProgram : Inkproof.Gpu.webglBody "useProgram" = ["s.current = s.programs.get(a[0]);", "gl.useProgram(s.current.program);"]

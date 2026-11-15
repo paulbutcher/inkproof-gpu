@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.0]
+
+- Adds a `createProgram` command, so the generated interpreter builds the renderer's program, numbers its uniforms and binds vertices, and draws visible geometry on WebGL2.
+- Prints `#version` before the header comments in the GLSL, which WebGL2 requires.
+
 ## [0.3.0]
 
 - Draws each tile's commands in Scene's paint order instead of a local layer sort, and depends on Scene v0.6.0.
