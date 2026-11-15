@@ -6,6 +6,12 @@
 
 A command list is one buffer: a little-endian 32-bit command count, then each command as an opcode byte followed by its operands. `generated/gpu.js` is the printed output; `lake exe gen generated` regenerates it, and the GLSL shaders beside it and the JavaScript tests fail when it is stale.
 
+## Compiling a display list
+
+`compile` turns a view's tiles (a display list and the transform uniform) into `Op`s; `Op.toCmd` gives the wire command. The caller supplies `tess`, the vertex words of one command, and its raster fidelity is outside the theorems. Buffers are cached by content, so a tile whose vertex words match a cached entry reuses its buffers and pan and zoom upload nothing. Unused buffers are deleted and handles are never reused. A frame sets the uniform and draws once per command, in layer order; the host binds the program.
+
+The theorems are stated against `Gpu` in `Proofs/Compile.lean`, an abstract model of buffers, uniform and draw log. Handles go on the wire modulo `2 ^ 32`, so the model is exact only while fewer than that many buffers are allocated.
+
 ## Shader language
 
 `Inkproof.Gpu.Shader` is a small Float32 language: scalars and vectors, componentwise `+`, `-` and `*` with scalar broadcast, vector construction and component selection. A `Shader` is typed inputs, uniforms and outputs, local declarations and assignments. `Shader.run` gives its meaning over inkproof-float's Float32 and `Shader.glsl` prints GLSL ES 3.00; the renderer's shaders (`vertexShader`, `fragmentShader`) are values of this type and `generated/*.glsl` are printed from them. Division and fused multiply-add are not in the language.
