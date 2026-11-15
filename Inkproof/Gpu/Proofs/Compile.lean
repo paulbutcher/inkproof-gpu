@@ -140,23 +140,19 @@ private theorem run_deletes_flatMap_out (g : Gpu) (l : List Entry) (k : Nat)
     rw [List.flatMap_cons, Gpu.run_append, ih _ (fun e he => hk e (List.mem_cons_of_mem _ he)),
       run_deletes_out _ _ _ _ (hk f (List.mem_cons_self ..))]
 
-def Item.toPair (i : Item) : Nat × Draw := (i.layer, Draw.mk i.words (i.words.length / 2) i.uniform)
+def Item.toDraw (i : Item) : Draw := Draw.mk i.words (i.words.length / 2) i.uniform
 
-private theorem itemsOf_map (u : List UInt32) (h : Nat) (cs : List (Nat × List UInt32)) :
-    (itemsOf u h cs).map Item.toPair =
-      cs.map fun p => (p.1, Draw.mk p.2 (p.2.length / 2) u) := by
+private theorem itemsOf_map (u : List UInt32) (h : Nat) (cs : List (List UInt32)) :
+    (itemsOf u h cs).map Item.toDraw = cs.map fun w => Draw.mk w (w.length / 2) u := by
   induction cs generalizing h with
   | nil => simp [itemsOf]
-  | cons c cs ih => simp [itemsOf, ih, Item.toPair]
+  | cons c cs ih => simp [itemsOf, ih, Item.toDraw]
 
-/-- Every draw of a frame, with its layer, as the display list asks for it: each command of each
-tile once, with the tile's uniform. -/
-def specItems (tess : Scene.Command → List UInt32) (tiles : List Tile) : List (Nat × Draw) :=
-  tiles.flatMap fun t => (t.cmds tess).map fun p => (p.1, Draw.mk p.2 (p.2.length / 2) t.uniform)
-
-/-- The draws of a frame in layer order. -/
+/-- The draws of a frame: each tile's commands in the display list's paint order, with the tile's
+uniform. -/
 def frameDraws (tess : Scene.Command → List UInt32) (tiles : List Tile) : List Draw :=
-  ((specItems tess tiles).mergeSort fun a b => decide (a.1 ≤ b.1)).map Prod.snd
+  tiles.flatMap fun t => t.list.paintOrder.map fun c =>
+    Draw.mk (tess c) ((tess c).length / 2) t.uniform
 
 /-- The buffers the cache claims are resident hold what it says, and its handles are disjoint and
 below `next`. -/
@@ -179,13 +175,12 @@ def Stage.Inv (s : Stage) (g : Gpu) : Prop :=
   (∀ i ∈ s.items, i.handle < s.cache.next ∧ (g.run s.ops).buffers i.handle = some i.words) ∧
   ∀ o ∈ s.ops, o.IsSetup
 
-private theorem itemsOf_ok (u : List UInt32) (g : Gpu) (cs : List (Nat × List UInt32)) (h : Nat)
-    (hg : ∀ j, j < cs.length → g.buffers (h + j) = (cs.map Prod.snd)[j]?) :
+private theorem itemsOf_ok (u : List UInt32) (g : Gpu) (cs : List (List UInt32)) (h : Nat)
+    (hg : ∀ j, j < cs.length → g.buffers (h + j) = cs[j]?) :
     ∀ i ∈ itemsOf u h cs, ∃ j, j < cs.length ∧ i.handle = h + j ∧ g.buffers i.handle = some i.words := by
   induction cs generalizing h with
   | nil => simp [itemsOf]
   | cons c cs ih =>
-    obtain ⟨l, w⟩ := c
     intro i hi
     simp only [itemsOf, List.mem_cons] at hi
     rcases hi with rfl | hi
@@ -199,8 +194,8 @@ private theorem itemsOf_ok (u : List UInt32) (g : Gpu) (cs : List (Nat × List U
 private theorem stageTile_inv (tess : Scene.Command → List UInt32) (s : Stage) (g : Gpu) (t : Tile)
     (hs : s.Inv g) :
     (stageTile tess s t).Inv g ∧
-    (stageTile tess s t).items.map Item.toPair =
-      s.items.map Item.toPair ++ (t.cmds tess).map fun p => (p.1, Draw.mk p.2 (p.2.length / 2) t.uniform) := by
+    (stageTile tess s t).items.map Item.toDraw =
+      s.items.map Item.toDraw ++ (t.cmds tess).map fun w => Draw.mk w (w.length / 2) t.uniform := by
   obtain ⟨hv, hi, hset⟩ := hs
   have hmap := fun u h cs => itemsOf_map u h cs
   unfold stageTile
@@ -208,7 +203,7 @@ private theorem stageTile_inv (tess : Scene.Command → List UInt32) (s : Stage)
   split
   · rename_i e he
     have hmem := List.mem_of_find?_eq_some he
-    have hw : e.words = ((t.cmds tess).map Prod.snd) := by simpa using List.find?_some he
+    have hw : e.words = (t.cmds tess) := by simpa using List.find?_some he
     obtain ⟨hb, hbuf⟩ := hv.1 e hmem
     have hok := itemsOf_ok t.uniform (g.run s.ops) (t.cmds tess) e.base (fun j hj => by
       rw [← hw]; exact hbuf j (by rw [hw]; simpa using hj))
@@ -224,18 +219,16 @@ private theorem stageTile_inv (tess : Scene.Command → List UInt32) (s : Stage)
         omega
     · rw [List.map_append, hmap]
   · rename_i hnone
-    generalize hws : (t.cmds tess).map Prod.snd = ws at hnone ⊢
+    generalize hws : t.cmds tess = ws at hnone ⊢
     obtain ⟨hv1, hv2⟩ := hv
     generalize hn : s.cache.next = n at hv1 hi ⊢
     have hrun : (g.run (s.ops ++ uploads n ws)) = (g.run s.ops).run (uploads n ws) := Gpu.run_append ..
-    have hlen : ws.length = (t.cmds tess).length := by rw [← hws]; simp
-    have hnew : ∀ j, j < (t.cmds tess).length →
+    have hnew : ∀ j, j < ws.length →
         ((g.run s.ops).run (uploads n ws)).buffers (n + j) = ws[j]? := fun j hj =>
       run_uploads_in _ _ _ _ (by omega)
     have hold : ∀ k, k < n → ((g.run s.ops).run (uploads n ws)).buffers k = (g.run s.ops).buffers k :=
       fun k hk => run_uploads_out _ _ _ _ (Or.inl hk)
-    have hok := itemsOf_ok t.uniform ((g.run s.ops).run (uploads n ws)) (t.cmds tess) n
-      (fun j hj => by rw [hws]; exact hnew j hj)
+    have hok := itemsOf_ok t.uniform ((g.run s.ops).run (uploads n ws)) ws n hnew
     refine ⟨⟨?_, ?_, ?_⟩, ?_⟩
     · rw [hrun]
       refine ⟨?_, ?_⟩
@@ -268,22 +261,23 @@ private theorem stageTile_inv (tess : Scene.Command → List UInt32) (s : Stage)
 private theorem foldl_stage (tess : Scene.Command → List UInt32) (g : Gpu) :
     ∀ (tiles : List Tile) (s : Stage), s.Inv g →
       (tiles.foldl (stageTile tess) s).Inv g ∧
-      (tiles.foldl (stageTile tess) s).items.map Item.toPair =
-        s.items.map Item.toPair ++ specItems tess tiles := by
+      (tiles.foldl (stageTile tess) s).items.map Item.toDraw =
+        s.items.map Item.toDraw ++ frameDraws tess tiles := by
   intro tiles
   induction tiles with
-  | nil => intro s hs; simp [specItems, hs]
+  | nil => intro s hs; simp [frameDraws, hs]
   | cons t ts ih =>
     intro s hs
     obtain ⟨h1, h2⟩ := stageTile_inv tess s g t hs
     obtain ⟨h3, h4⟩ := ih _ h1
     refine ⟨h3, ?_⟩
-    simp only [List.foldl_cons, h4, h2, specItems, List.flatMap_cons, List.append_assoc]
+    simp only [List.foldl_cons, h4, h2, frameDraws, List.flatMap_cons, List.append_assoc, Tile.cmds, List.map_map]
+    rfl
 
 private theorem run_draws (g : Gpu) (L : List Item)
     (h : ∀ i ∈ L, g.buffers i.handle = some i.words) :
     (g.run (L.flatMap fun i => [Op.uniform i.uniform, Op.draw i.handle (i.words.length / 2)])).log =
-        g.log ++ L.map (fun i => i.toPair.2) ∧
+        g.log ++ L.map Item.toDraw ∧
     (g.run (L.flatMap fun i => [Op.uniform i.uniform, Op.draw i.handle (i.words.length / 2)])).buffers =
         g.buffers := by
   induction L generalizing g with
@@ -302,26 +296,26 @@ private theorem run_draws (g : Gpu) (L : List Item)
         ⟨g.buffers, i.uniform, g.log ++ [Draw.mk i.words (i.words.length / 2) i.uniform]⟩ := by
       simp [Gpu.step, hi]
     rw [hs] at this ⊢
-    refine ⟨by rw [this.1]; simp [Item.toPair], this.2⟩
+    refine ⟨by rw [this.1]; simp [Item.toDraw], this.2⟩
 
 private theorem compile_eq (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) :
     ∃ s : Stage, s = tiles.foldl (stageTile tess)
-      ⟨{ c with entries := c.entries.filter fun e => tiles.any fun t => decide (e.words = (t.cmds tess).map Prod.snd) },
-        (c.entries.filter fun e => !(tiles.any fun t => decide (e.words = (t.cmds tess).map Prod.snd))).flatMap
+      ⟨{ c with entries := c.entries.filter fun e => tiles.any fun t => decide (e.words = t.cmds tess) },
+        (c.entries.filter fun e => !(tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
           fun e => deletes e.base e.words.length, []⟩ ∧
       compile tess c tiles = (s.cache, s.ops ++
-        (s.items.mergeSort fun a b => decide (a.layer ≤ b.layer)).flatMap
+        s.items.flatMap
           fun i => [Op.uniform i.uniform, Op.draw i.handle (i.words.length / 2)]) :=
   ⟨_, rfl, rfl⟩
 
 private theorem initial_inv (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) (g : Gpu)
     (hv : c.Valid g) :
     (Stage.mk
-      { c with entries := c.entries.filter fun e => tiles.any fun t => decide (e.words = (t.cmds tess).map Prod.snd) }
-      ((c.entries.filter fun e => !(tiles.any fun t => decide (e.words = (t.cmds tess).map Prod.snd))).flatMap
+      { c with entries := c.entries.filter fun e => tiles.any fun t => decide (e.words = t.cmds tess) }
+      ((c.entries.filter fun e => !(tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
           fun e => deletes e.base e.words.length) []).Inv g := by
   have hperm := List.filter_append_perm
-    (fun e : Entry => tiles.any fun t => decide (e.words = (t.cmds tess).map Prod.snd)) c.entries
+    (fun e : Entry => tiles.any fun t => decide (e.words = t.cmds tess)) c.entries
   have hpw := (hperm.pairwise_iff (fun h => by omega)).mpr hv.2
   rw [List.pairwise_append] at hpw
   refine ⟨⟨fun e he => ?_, hpw.1⟩, by simp, fun o ho => ?_⟩
@@ -341,7 +335,7 @@ private theorem initial_inv (tess : Scene.Command → List UInt32) (c : Cache) (
     exact deletes_setup _ _ o ho
 
 /-- Running a frame from any GPU the cache is valid for performs the draws of the display lists
-in layer order, and leaves the cache valid for the GPU it produces. -/
+in paint order, and leaves the cache valid for the GPU it produces. -/
 theorem compile_log (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) (g : Gpu)
     (hv : c.Valid g) :
     (g.run (compile tess c tiles).2).log = g.log ++ frameDraws tess tiles ∧
@@ -352,35 +346,15 @@ theorem compile_log (tess : Scene.Command → List UInt32) (c : Cache) (tiles : 
   rw [← hs] at hinv hmap
   obtain ⟨hvalid, hitems, hset⟩ := hinv
   rw [Gpu.run_append]
-  have hperm := List.mergeSort_perm s.items (fun a b => decide (a.layer ≤ b.layer))
-  obtain ⟨hlog, hbuf⟩ := run_draws (g.run s.ops)
-    (s.items.mergeSort fun a b => decide (a.layer ≤ b.layer))
-    (fun i hi => (hitems i (hperm.mem_iff.mp hi)).2)
+  obtain ⟨hlog, hbuf⟩ := run_draws (g.run s.ops) s.items (fun i hi => (hitems i hi).2)
   refine ⟨?_, hvalid.congr hbuf⟩
-  rw [hlog, (Gpu.run_setup g s.ops hset).1, frameDraws]
-  congr 1
-  have hm := List.map_mergeSort (r := fun a b : Item => decide (a.layer ≤ b.layer))
-    (s := fun a b : Nat × Draw => decide (a.1 ≤ b.1)) (f := Item.toPair) (l := s.items)
-    (fun a _ b _ => rfl)
+  rw [hlog, (Gpu.run_setup g s.ops hset).1]
   simp only [List.nil_append, List.map_nil] at hmap
-  rw [← hmap, ← hm, List.map_map]
-  rfl
+  rw [← hmap]
 
 theorem compile_valid (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) (g : Gpu)
     (hv : c.Valid g) : (compile tess c tiles).1.Valid (g.run (compile tess c tiles).2) :=
   (compile_log tess c tiles g hv).2
-
-/-- The draws of a frame are a permutation of the commands of the tiles, each once with its tile's
-uniform, and their layers never decrease. -/
-theorem frame_order (tess : Scene.Command → List UInt32) (tiles : List Tile) :
-    ∃ order : List (Nat × Draw), order.Perm (specItems tess tiles) ∧
-      order.Pairwise (fun a b => a.1 ≤ b.1) ∧ frameDraws tess tiles = order.map Prod.snd := by
-  refine ⟨(specItems tess tiles).mergeSort fun a b => decide (a.1 ≤ b.1),
-    List.mergeSort_perm _ _, ?_, rfl⟩
-  have := List.pairwise_mergeSort (le := fun a b : Nat × Draw => decide (a.1 ≤ b.1))
-    (fun a b c => by simpa using Nat.le_trans) (fun a b => by simpa using Nat.le_total a.1 b.1)
-    (specItems tess tiles)
-  simpa using this
 
 /-- Reusing cached buffers draws what uploading afresh would. -/
 theorem cached_eq_fresh (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) (g : Gpu)
@@ -406,7 +380,7 @@ theorem compile_cached (tess : Scene.Command → List UInt32) (c : Cache) (tiles
     | cons t ts ih =>
       intro s h1 h2
       obtain ⟨e, he, hw⟩ := h2 t (List.mem_cons_self ..)
-      have hsome : (s.cache.entries.find? fun e => decide (e.words = (t.cmds tess).map Prod.snd)).isSome := by
+      have hsome : (s.cache.entries.find? fun e => decide (e.words = t.cmds tess)).isSome := by
         rw [List.find?_isSome]
         exact ⟨e, he, by simpa using hw⟩
       simp only [List.foldl_cons]
@@ -464,7 +438,7 @@ theorem compileCmds_eq (tess : Scene.Command → List UInt32) (c : Cache) (tiles
     (Op.draw h n).toCmd = ⟨5, [.u32 h.toUInt32, .u32 n.toUInt32]⟩ := rfl
 
 theorem Tile.cmds_eq (tess : Scene.Command → List UInt32) (t : Tile) :
-    t.cmds tess = t.list.toList.map fun c => (c.layer, tess c) := rfl
+    t.cmds tess = t.list.paintOrder.map tess := rfl
 
 theorem specOf_eq_find (op : UInt8) : specOf op = specs.find? (·.op == op) := rfl
 

@@ -36,7 +36,7 @@ def isUpload : Op → Bool
   | .create _ | .upload _ _ => true
   | _ => false
 
-def drawLayers (ops : List Op) : List Nat :=
+def drawHandles (ops : List Op) : List Nat :=
   ops.filterMap fun | .draw h _ => some h | _ => none
 
 def main (args : List String) : IO UInt32 :=
@@ -48,13 +48,13 @@ def main (args : List String) : IO UInt32 :=
       check (!decide badShader.WellTyped) "accepted"⟩,
     ⟨"vectors of different dimension do not combine",
       check (ragged.eval (fun _ => some [1, 2]) == none) "evaluated"⟩,
-    ⟨"first frame uploads and draws in layer order",
+    ⟨"first frame uploads and draws each tile in paint order",
       let (_, ops) := compile tess {} (tiles 0)
-      check (ops.any isUpload && drawLayers ops == [1, 2, 0]) "wrong order or no uploads"⟩,
+      check (ops.any isUpload && drawHandles ops == [0, 1, 2]) "wrong order or no uploads"⟩,
     ⟨"pan frame only sets uniforms and draws",
       let (c, _) := compile tess {} (tiles 0)
       let (_, ops) := compile tess c (tiles 5)
-      check (!ops.any isUpload && drawLayers ops == [1, 2, 0]) "uploaded again"⟩,
+      check (!ops.any isUpload && drawHandles ops == [0, 1, 2]) "uploaded again"⟩,
     ⟨"changed tile content is uploaded and the stale buffers deleted",
       let (c, _) := compile tess {} (tiles 0)
       let (_, ops) := compile tess c [⟨#[cmd 3 9], [0]⟩]

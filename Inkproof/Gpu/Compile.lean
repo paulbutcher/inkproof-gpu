@@ -3,7 +3,7 @@ Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import Inkproof.Gpu.Wire
-import Inkproof.Scene.DisplayList
+import Inkproof.Scene.PaintOrder
 
 namespace Inkproof.Gpu
 
@@ -29,9 +29,9 @@ structure Tile where
   list : Scene.DisplayList
   uniform : List UInt32
 
-/-- The vertex words of one display-list command, with its layer. -/
-def Tile.cmds (tess : Scene.Command → List UInt32) (t : Tile) : List (Nat × List UInt32) :=
-  t.list.toList.map fun c => (c.layer, tess c)
+/-- The vertex words of the commands of a tile, in the order they are painted. -/
+def Tile.cmds (tess : Scene.Command → List UInt32) (t : Tile) : List (List UInt32) :=
+  t.list.paintOrder.map tess
 
 /-- Buffers `base`, `base + 1`, ... hold `words`, one buffer per command. -/
 structure Entry where
@@ -43,16 +43,15 @@ structure Cache where
   entries : List Entry := []
   next : Nat := 0
 
-/-- A draw of one command: its place in the draw order, buffer handle, vertex words and uniform. -/
+/-- A draw of one command: its buffer handle, vertex words and uniform. -/
 structure Item where
-  layer : Nat
   handle : Nat
   words : List UInt32
   uniform : List UInt32
 
-def itemsOf (u : List UInt32) : Nat → List (Nat × List UInt32) → List Item
+def itemsOf (u : List UInt32) : Nat → List (List UInt32) → List Item
   | _, [] => []
-  | h, (l, w) :: cs => ⟨l, h, w, u⟩ :: itemsOf u (h + 1) cs
+  | h, w :: cs => ⟨h, w, u⟩ :: itemsOf u (h + 1) cs
 
 def uploads : Nat → List (List UInt32) → List Op
   | _, [] => []
@@ -69,29 +68,27 @@ structure Stage where
 
 def stageTile (tess : Scene.Command → List UInt32) (s : Stage) (t : Tile) : Stage :=
   let cs := t.cmds tess
-  let ws := cs.map Prod.snd
-  match s.cache.entries.find? fun e => decide (e.words = ws) with
+  match s.cache.entries.find? fun e => decide (e.words = cs) with
   | some e => { s with items := s.items ++ itemsOf t.uniform e.base cs }
   | none =>
-    { cache := { entries := s.cache.entries ++ [⟨ws, s.cache.next⟩], next := s.cache.next + ws.length }
-      ops := s.ops ++ uploads s.cache.next ws
+    { cache := { entries := s.cache.entries ++ [⟨cs, s.cache.next⟩], next := s.cache.next + cs.length }
+      ops := s.ops ++ uploads s.cache.next cs
       items := s.items ++ itemsOf t.uniform s.cache.next cs }
 
 def Tile.Cached (tess : Scene.Command → List UInt32) (c : Cache) (t : Tile) : Prop :=
-  ∃ e ∈ c.entries, e.words = (t.cmds tess).map Prod.snd
+  ∃ e ∈ c.entries, e.words = t.cmds tess
 
 instance (tess : Scene.Command → List UInt32) (c : Cache) (t : Tile) : Decidable (t.Cached tess c) :=
-  inferInstanceAs (Decidable (∃ e ∈ c.entries, e.words = (t.cmds tess).map Prod.snd))
+  inferInstanceAs (Decidable (∃ e ∈ c.entries, e.words = t.cmds tess))
 
 /-- One frame: delete the buffers no tile uses, upload those of tiles not cached, then for each
-command in layer order set the uniform and draw. -/
+command of each tile in paint order set the uniform and draw. -/
 def compile (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) : Cache × List Op :=
-  let used (e : Entry) : Bool := tiles.any fun t => decide (e.words = (t.cmds tess).map Prod.snd)
+  let used (e : Entry) : Bool := tiles.any fun t => decide (e.words = t.cmds tess)
   let s := tiles.foldl (stageTile tess)
     ⟨{ c with entries := c.entries.filter used },
       (c.entries.filter (!used ·)).flatMap fun e => deletes e.base e.words.length, []⟩
-  let order := s.items.mergeSort fun a b => decide (a.layer ≤ b.layer)
-  (s.cache, s.ops ++ order.flatMap fun i => [.uniform i.uniform, .draw i.handle (i.words.length / 2)])
+  (s.cache, s.ops ++ s.items.flatMap fun i => [.uniform i.uniform, .draw i.handle (i.words.length / 2)])
 
 /-- The wire form of a frame. -/
 def compileCmds (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) :

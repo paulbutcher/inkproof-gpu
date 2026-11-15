@@ -12,8 +12,8 @@ package «inkproof-gpu» where
     ⟨`warningAsError, true⟩
   ]
 
-require «inkproof-float» from git "https://github.com/paulbutcher/inkproof-float" @ "v0.4.0"
-require «inkproof-scene» from git "https://github.com/paulbutcher/inkproof-scene" @ "v0.5.0"
+require «inkproof-float» from git "https://github.com/paulbutcher/inkproof-float" @ "v0.5.0"
+require «inkproof-scene» from git "https://github.com/paulbutcher/inkproof-scene" @ "v0.6.0"
 
 @[default_target]
 lean_lib InkproofGpu where

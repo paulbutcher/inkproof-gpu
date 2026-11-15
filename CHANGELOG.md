@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.0]
+
+- Draws each tile's commands in Scene's paint order instead of a local layer sort, and depends on Scene v0.6.0.
+
 ## [0.2.0]
 
 - Compiler from Scene display lists to GPU command lists, caching buffers per tile so pan and zoom upload nothing.
