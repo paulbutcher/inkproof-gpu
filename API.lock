@@ -1,0 +1,153 @@
+inductive Inkproof.Gpu.Arg : Type
+def Inkproof.Gpu.Arg.Fits : Inkproof.Gpu.Arg → Inkproof.Gpu.FieldTy → Prop
+def Inkproof.Gpu.Arg.encode : Inkproof.Gpu.Arg → List UInt8
+constructor Inkproof.Gpu.Arg.u32 : UInt32 → Inkproof.Gpu.Arg
+constructor Inkproof.Gpu.Arg.words : List UInt32 → Inkproof.Gpu.Arg
+def Inkproof.Gpu.ArgsFit : List Inkproof.Gpu.Arg → List Inkproof.Gpu.FieldTy → Prop
+structure Inkproof.Gpu.Cmd : Type
+def Inkproof.Gpu.Cmd.WellFormed : Inkproof.Gpu.Cmd → Prop
+field Inkproof.Gpu.Cmd.args : Inkproof.Gpu.Cmd → List Inkproof.Gpu.Arg
+def Inkproof.Gpu.Cmd.encode : Inkproof.Gpu.Cmd → List UInt8
+constructor Inkproof.Gpu.Cmd.mk : UInt8 → List Inkproof.Gpu.Arg → Inkproof.Gpu.Cmd
+field Inkproof.Gpu.Cmd.op : Inkproof.Gpu.Cmd → UInt8
+inductive Inkproof.Gpu.FieldTy : Type
+def Inkproof.Gpu.FieldTy.jsRead : Inkproof.Gpu.FieldTy → String
+theorem Inkproof.Gpu.FieldTy.jsRead_u32 : Inkproof.Gpu.FieldTy.u32.jsRead = "r.u32()"
+theorem Inkproof.Gpu.FieldTy.jsRead_words : Inkproof.Gpu.FieldTy.words.jsRead = "r.words()"
+def Inkproof.Gpu.FieldTy.ofNat : Nat → Inkproof.Gpu.FieldTy
+theorem Inkproof.Gpu.FieldTy.ofNat_ctorIdx : ∀ (x : Inkproof.Gpu.FieldTy), Inkproof.Gpu.FieldTy.ofNat x.ctorIdx = x
+constructor Inkproof.Gpu.FieldTy.u32 : Inkproof.Gpu.FieldTy
+constructor Inkproof.Gpu.FieldTy.words : Inkproof.Gpu.FieldTy
+def Inkproof.Gpu.Placeable : Rat → Float32 → Float32 → Float32 → Rat → Prop
+def Inkproof.Gpu.Placed : Rat → Float32 → Rat → Prop
+structure Inkproof.Gpu.Shader.Decl : Type
+field Inkproof.Gpu.Shader.Decl.dim : Inkproof.Gpu.Shader.Decl → Nat
+field Inkproof.Gpu.Shader.Decl.init : Inkproof.Gpu.Shader.Decl → Inkproof.Gpu.Shader.Expr
+constructor Inkproof.Gpu.Shader.Decl.mk : String → Nat → Inkproof.Gpu.Shader.Expr → Inkproof.Gpu.Shader.Decl
+field Inkproof.Gpu.Shader.Decl.name : Inkproof.Gpu.Shader.Decl → String
+inductive Inkproof.Gpu.Shader.Expr : Type
+constructor Inkproof.Gpu.Shader.Expr.bin : Inkproof.Gpu.Shader.Op → Inkproof.Gpu.Shader.Expr → Inkproof.Gpu.Shader.Expr → Inkproof.Gpu.Shader.Expr
+theorem Inkproof.Gpu.Shader.Expr.brecOn.eq : ∀ {motive : Inkproof.Gpu.Shader.Expr → Sort u} (t : Inkproof.Gpu.Shader.Expr) (F_1 : (t : Inkproof.Gpu.Shader.Expr) → Inkproof.Gpu.Shader.Expr.below t → motive t), Inkproof.Gpu.Shader.Expr.brecOn t F_1 = F_1 t (Inkproof.Gpu.Shader.Expr.brecOn.go t F_1).2
+def Inkproof.Gpu.Shader.Expr.brecOn.go : {motive : Inkproof.Gpu.Shader.Expr → Sort u} → (t : Inkproof.Gpu.Shader.Expr) → ((t : Inkproof.Gpu.Shader.Expr) → Inkproof.Gpu.Shader.Expr.below t → motive t) → motive t ×' Inkproof.Gpu.Shader.Expr.below t
+constructor Inkproof.Gpu.Shader.Expr.comp : Fin 4 → Inkproof.Gpu.Shader.Expr → Inkproof.Gpu.Shader.Expr
+def Inkproof.Gpu.Shader.Expr.dim : (String → Option Nat) → Inkproof.Gpu.Shader.Expr → Option Nat
+theorem Inkproof.Gpu.Shader.Expr.dim_bin : ∀ (env : String → Option Nat) (op : Inkproof.Gpu.Shader.Op) (a b : Inkproof.Gpu.Shader.Expr), Inkproof.Gpu.Shader.Expr.dim env (Inkproof.Gpu.Shader.Expr.bin op a b) = do let __do_lift ← Inkproof.Gpu.Shader.Expr.dim env a let __do_lift_1 ← Inkproof.Gpu.Shader.Expr.dim env b Inkproof.Gpu.Shader.broadcastDim __do_lift __do_lift_1
+theorem Inkproof.Gpu.Shader.Expr.dim_comp : ∀ (env : String → Option Nat) (i : Fin 4) (e : Inkproof.Gpu.Shader.Expr), Inkproof.Gpu.Shader.Expr.dim env (Inkproof.Gpu.Shader.Expr.comp i e) = do let __do_lift ← Inkproof.Gpu.Shader.Expr.dim env e if ↑i < __do_lift then Option.some 1 else Option.none
+theorem Inkproof.Gpu.Shader.Expr.dim_lit : ∀ (env : String → Option Nat) (n : Nat), Inkproof.Gpu.Shader.Expr.dim env (Inkproof.Gpu.Shader.Expr.lit n) = Option.some 1
+theorem Inkproof.Gpu.Shader.Expr.dim_var : ∀ (env : String → Option Nat) (n : String), Inkproof.Gpu.Shader.Expr.dim env (Inkproof.Gpu.Shader.Expr.var n) = env n
+theorem Inkproof.Gpu.Shader.Expr.dim_vec2 : ∀ (env : String → Option Nat) (a b : Inkproof.Gpu.Shader.Expr), Inkproof.Gpu.Shader.Expr.dim env (a.vec2 b) = do let __do_lift ← Inkproof.Gpu.Shader.Expr.dim env a let __do_lift_1 ← Inkproof.Gpu.Shader.Expr.dim env b if __do_lift = 1 ∧ __do_lift_1 = 1 then Option.some 2 else Option.none
+theorem Inkproof.Gpu.Shader.Expr.dim_vec4 : ∀ (env : String → Option Nat) (a b c d : Inkproof.Gpu.Shader.Expr), Inkproof.Gpu.Shader.Expr.dim env (a.vec4 b c d) = do let __do_lift ← Inkproof.Gpu.Shader.Expr.dim env a let __do_lift_1 ← Inkproof.Gpu.Shader.Expr.dim env b let __do_lift_2 ← Inkproof.Gpu.Shader.Expr.dim env c let __do_lift_3 ← Inkproof.Gpu.Shader.Expr.dim env d if __do_lift = 1 ∧ __do_lift_1 = 1 ∧ __do_lift_2 = 1 ∧ __do_lift_3 = 1 then Option.some 4 else Option.none
+def Inkproof.Gpu.Shader.Expr.eval : (String → Option (List Float32)) → Inkproof.Gpu.Shader.Expr → Option (List Float32)
+theorem Inkproof.Gpu.Shader.Expr.eval_bin : ∀ (env : String → Option (List Float32)) (op : Inkproof.Gpu.Shader.Op) (a b : Inkproof.Gpu.Shader.Expr), Inkproof.Gpu.Shader.Expr.eval env (Inkproof.Gpu.Shader.Expr.bin op a b) = do let __do_lift ← Inkproof.Gpu.Shader.Expr.eval env a let __do_lift_1 ← Inkproof.Gpu.Shader.Expr.eval env b op.lift __do_lift __do_lift_1
+theorem Inkproof.Gpu.Shader.Expr.eval_comp : ∀ (env : String → Option (List Float32)) (i : Fin 4) (e : Inkproof.Gpu.Shader.Expr), Inkproof.Gpu.Shader.Expr.eval env (Inkproof.Gpu.Shader.Expr.comp i e) = do let v ← Inkproof.Gpu.Shader.Expr.eval env e match v[↑i]? with | Option.some x => Option.some [x] | Option.none => Option.none
+theorem Inkproof.Gpu.Shader.Expr.eval_lit : ∀ (env : String → Option (List Float32)) (n : Nat), Inkproof.Gpu.Shader.Expr.eval env (Inkproof.Gpu.Shader.Expr.lit n) = Option.some [OfNat.ofNat n]
+theorem Inkproof.Gpu.Shader.Expr.eval_var : ∀ (env : String → Option (List Float32)) (n : String), Inkproof.Gpu.Shader.Expr.eval env (Inkproof.Gpu.Shader.Expr.var n) = env n
+theorem Inkproof.Gpu.Shader.Expr.eval_vec2 : ∀ (env : String → Option (List Float32)) (a b : Inkproof.Gpu.Shader.Expr), Inkproof.Gpu.Shader.Expr.eval env (a.vec2 b) = do let __do_lift ← Inkproof.Gpu.Shader.Expr.eval env a let x ← Inkproof.Gpu.Shader.scalar __do_lift let __do_lift ← Inkproof.Gpu.Shader.Expr.eval env b let y ← Inkproof.Gpu.Shader.scalar __do_lift Option.some [x, y]
+theorem Inkproof.Gpu.Shader.Expr.eval_vec4 : ∀ (env : String → Option (List Float32)) (a b c d : Inkproof.Gpu.Shader.Expr), Inkproof.Gpu.Shader.Expr.eval env (a.vec4 b c d) = do let __do_lift ← Inkproof.Gpu.Shader.Expr.eval env a let x ← Inkproof.Gpu.Shader.scalar __do_lift let __do_lift ← Inkproof.Gpu.Shader.Expr.eval env b let y ← Inkproof.Gpu.Shader.scalar __do_lift let __do_lift ← Inkproof.Gpu.Shader.Expr.eval env c let z ← Inkproof.Gpu.Shader.scalar __do_lift let __do_lift ← Inkproof.Gpu.Shader.Expr.eval env d let w ← Inkproof.Gpu.Shader.scalar __do_lift Option.some [x, y, z, w]
+def Inkproof.Gpu.Shader.Expr.glsl : Inkproof.Gpu.Shader.Expr → String
+theorem Inkproof.Gpu.Shader.Expr.glsl_bin : ∀ (op : Inkproof.Gpu.Shader.Op) (a b : Inkproof.Gpu.Shader.Expr), (Inkproof.Gpu.Shader.Expr.bin op a b).glsl = ToString.toString "(" ++ ToString.toString a.glsl ++ ToString.toString " " ++ ToString.toString op.glsl ++ ToString.toString " " ++ ToString.toString b.glsl ++ ToString.toString ")"
+theorem Inkproof.Gpu.Shader.Expr.glsl_comp : ∀ (i : Fin 4) (e : Inkproof.Gpu.Shader.Expr), (Inkproof.Gpu.Shader.Expr.comp i e).glsl = ToString.toString e.glsl ++ ToString.toString "." ++ ToString.toString (Inkproof.Gpu.Shader.componentName i)
+theorem Inkproof.Gpu.Shader.Expr.glsl_lit : ∀ (n : Nat), (Inkproof.Gpu.Shader.Expr.lit n).glsl = ToString.toString n ++ ToString.toString ".0"
+theorem Inkproof.Gpu.Shader.Expr.glsl_var : ∀ (n : String), (Inkproof.Gpu.Shader.Expr.var n).glsl = n
+theorem Inkproof.Gpu.Shader.Expr.glsl_vec2 : ∀ (a b : Inkproof.Gpu.Shader.Expr), (a.vec2 b).glsl = ToString.toString "vec2(" ++ ToString.toString a.glsl ++ ToString.toString ", " ++ ToString.toString b.glsl ++ ToString.toString ")"
+theorem Inkproof.Gpu.Shader.Expr.glsl_vec4 : ∀ (a b c d : Inkproof.Gpu.Shader.Expr), (a.vec4 b c d).glsl = ToString.toString "vec4(" ++ ToString.toString a.glsl ++ ToString.toString ", " ++ ToString.toString b.glsl ++ ToString.toString ", " ++ ToString.toString c.glsl ++ ToString.toString ", " ++ ToString.toString d.glsl ++ ToString.toString ")"
+constructor Inkproof.Gpu.Shader.Expr.lit : Nat → Inkproof.Gpu.Shader.Expr
+constructor Inkproof.Gpu.Shader.Expr.var : String → Inkproof.Gpu.Shader.Expr
+constructor Inkproof.Gpu.Shader.Expr.vec2 : Inkproof.Gpu.Shader.Expr → Inkproof.Gpu.Shader.Expr → Inkproof.Gpu.Shader.Expr
+constructor Inkproof.Gpu.Shader.Expr.vec4 : Inkproof.Gpu.Shader.Expr → Inkproof.Gpu.Shader.Expr → Inkproof.Gpu.Shader.Expr → Inkproof.Gpu.Shader.Expr → Inkproof.Gpu.Shader.Expr
+inductive Inkproof.Gpu.Shader.Op : Type
+constructor Inkproof.Gpu.Shader.Op.add : Inkproof.Gpu.Shader.Op
+def Inkproof.Gpu.Shader.Op.apply : Inkproof.Gpu.Shader.Op → Float32 → Float32 → Float32
+def Inkproof.Gpu.Shader.Op.glsl : Inkproof.Gpu.Shader.Op → String
+theorem Inkproof.Gpu.Shader.Op.glsl_add : Inkproof.Gpu.Shader.Op.add.glsl = "+"
+theorem Inkproof.Gpu.Shader.Op.glsl_mul : Inkproof.Gpu.Shader.Op.mul.glsl = "*"
+theorem Inkproof.Gpu.Shader.Op.glsl_sub : Inkproof.Gpu.Shader.Op.sub.glsl = "-"
+def Inkproof.Gpu.Shader.Op.lift : Inkproof.Gpu.Shader.Op → List Float32 → List Float32 → Option (List Float32)
+theorem Inkproof.Gpu.Shader.Op.lift_scalar_left : ∀ (op : Inkproof.Gpu.Shader.Op) (x : Float32) (ys : List Float32), op.lift [x] ys = Option.some (List.map (op.apply x) ys)
+theorem Inkproof.Gpu.Shader.Op.lift_scalar_right : ∀ (op : Inkproof.Gpu.Shader.Op) (x : Float32) (xs : List Float32), xs.length ≠ 1 → op.lift xs [x] = Option.some (List.map (fun x_1 => op.apply x_1 x) xs)
+theorem Inkproof.Gpu.Shader.Op.lift_zipWith : ∀ (op : Inkproof.Gpu.Shader.Op) (xs ys : List Float32), xs.length ≠ 1 → ys.length ≠ 1 → xs.length = ys.length → op.lift xs ys = Option.some (List.zipWith op.apply xs ys)
+constructor Inkproof.Gpu.Shader.Op.mul : Inkproof.Gpu.Shader.Op
+def Inkproof.Gpu.Shader.Op.ofNat : Nat → Inkproof.Gpu.Shader.Op
+theorem Inkproof.Gpu.Shader.Op.ofNat_ctorIdx : ∀ (x : Inkproof.Gpu.Shader.Op), Inkproof.Gpu.Shader.Op.ofNat x.ctorIdx = x
+constructor Inkproof.Gpu.Shader.Op.sub : Inkproof.Gpu.Shader.Op
+structure Inkproof.Gpu.Shader.Shader : Type
+def Inkproof.Gpu.Shader.Shader.WellTyped : Inkproof.Gpu.Shader.Shader → Prop
+field Inkproof.Gpu.Shader.Shader.assigns : Inkproof.Gpu.Shader.Shader → List (String × Inkproof.Gpu.Shader.Expr)
+field Inkproof.Gpu.Shader.Shader.decls : Inkproof.Gpu.Shader.Shader → List Inkproof.Gpu.Shader.Decl
+def Inkproof.Gpu.Shader.Shader.env : Inkproof.Gpu.Shader.Shader → String → Option Nat
+def Inkproof.Gpu.Shader.Shader.glsl : Inkproof.Gpu.Shader.Shader → String
+theorem Inkproof.Gpu.Shader.Shader.glsl_eq : ∀ (s : Inkproof.Gpu.Shader.Shader), s.glsl = "\n".intercalate (Inkproof.Gpu.Shader.glslHeader ++ (List.map (fun x => Inkproof.Gpu.Shader.Var.glsl "in" x) s.ins ++ List.map (fun x => Inkproof.Gpu.Shader.Var.glsl "uniform" x) s.uniforms ++ List.map (fun x => Inkproof.Gpu.Shader.Var.glsl "out" x) s.outs) ++ ["void main() {"] ++ List.map (fun d => ToString.toString " " ++ ToString.toString (Inkproof.Gpu.Shader.tyGlsl d.dim) ++ ToString.toString " " ++ ToString.toString d.name ++ ToString.toString " = " ++ ToString.toString d.init.glsl ++ ToString.toString ";") s.decls ++ List.map (fun x => match x with | (n, e) => ToString.toString " " ++ ToString.toString n ++ ToString.toString " = " ++ ToString.toString e.glsl ++ ToString.toString ";") s.assigns ++ ["}"]) ++ "\n"
+field Inkproof.Gpu.Shader.Shader.ins : Inkproof.Gpu.Shader.Shader → List Inkproof.Gpu.Shader.Var
+constructor Inkproof.Gpu.Shader.Shader.mk : List Inkproof.Gpu.Shader.Var → List Inkproof.Gpu.Shader.Var → List Inkproof.Gpu.Shader.Var → List Inkproof.Gpu.Shader.Decl → List (String × Inkproof.Gpu.Shader.Expr) → Inkproof.Gpu.Shader.Shader
+field Inkproof.Gpu.Shader.Shader.outs : Inkproof.Gpu.Shader.Shader → List Inkproof.Gpu.Shader.Var
+def Inkproof.Gpu.Shader.Shader.run : Inkproof.Gpu.Shader.Shader → (String → Option (List Float32)) → Option (List (String × List Float32))
+theorem Inkproof.Gpu.Shader.Shader.run_eq : ∀ (s : Inkproof.Gpu.Shader.Shader) (inputs : String → Option (List Float32)), s.run inputs = do let env ← List.foldlM (fun env d => do let v ← Inkproof.Gpu.Shader.Expr.eval env d.init Option.some fun n => if (n == d.name) = Bool.true then Option.some v else env n) inputs s.decls List.mapM (fun x => match x with | (n, e) => do let __do_lift ← Inkproof.Gpu.Shader.Expr.eval env e Option.some (n, __do_lift)) s.assigns
+theorem Inkproof.Gpu.Shader.Shader.run_no_decls : ∀ (s : Inkproof.Gpu.Shader.Shader), s.decls = [] → ∀ (inputs : String → Option (List Float32)), s.run inputs = List.mapM (fun x => match x with | (n, e) => do let __do_lift ← Inkproof.Gpu.Shader.Expr.eval inputs e Option.some (n, __do_lift)) s.assigns
+field Inkproof.Gpu.Shader.Shader.uniforms : Inkproof.Gpu.Shader.Shader → List Inkproof.Gpu.Shader.Var
+structure Inkproof.Gpu.Shader.Var : Type
+field Inkproof.Gpu.Shader.Var.dim : Inkproof.Gpu.Shader.Var → Nat
+def Inkproof.Gpu.Shader.Var.glsl : String → Inkproof.Gpu.Shader.Var → String
+constructor Inkproof.Gpu.Shader.Var.mk : String → Nat → Inkproof.Gpu.Shader.Var
+field Inkproof.Gpu.Shader.Var.name : Inkproof.Gpu.Shader.Var → String
+def Inkproof.Gpu.Shader.broadcastDim : Nat → Nat → Option Nat
+def Inkproof.Gpu.Shader.componentName : Fin 4 → String
+def Inkproof.Gpu.Shader.glslHeader : List String
+instance Inkproof.Gpu.Shader.instDecidableEqOp : DecidableEq Inkproof.Gpu.Shader.Op
+instance Inkproof.Gpu.Shader.instDecidableWellTyped : (s : Inkproof.Gpu.Shader.Shader) → Decidable s.WellTyped
+instance Inkproof.Gpu.Shader.instReprExpr : Repr Inkproof.Gpu.Shader.Expr
+def Inkproof.Gpu.Shader.instReprExpr.repr : Inkproof.Gpu.Shader.Expr → Nat → Std.Format
+instance Inkproof.Gpu.Shader.instReprOp : Repr Inkproof.Gpu.Shader.Op
+def Inkproof.Gpu.Shader.instReprOp.repr : Inkproof.Gpu.Shader.Op → Nat → Std.Format
+def Inkproof.Gpu.Shader.scalar : List Float32 → Option Float32
+def Inkproof.Gpu.Shader.tyGlsl : Nat → String
+structure Inkproof.Gpu.Spec : Type
+field Inkproof.Gpu.Spec.fields : Inkproof.Gpu.Spec → List Inkproof.Gpu.FieldTy
+constructor Inkproof.Gpu.Spec.mk : String → UInt8 → List Inkproof.Gpu.FieldTy → Inkproof.Gpu.Spec
+field Inkproof.Gpu.Spec.name : Inkproof.Gpu.Spec → String
+field Inkproof.Gpu.Spec.op : Inkproof.Gpu.Spec → UInt8
+def Inkproof.Gpu.decode : List UInt8 → Option (List Inkproof.Gpu.Cmd)
+def Inkproof.Gpu.decodeArg : Inkproof.Gpu.FieldTy → List UInt8 → Option (Inkproof.Gpu.Arg × List UInt8)
+theorem Inkproof.Gpu.decodeArg_encode : ∀ {a : Inkproof.Gpu.Arg} {t : Inkproof.Gpu.FieldTy}, a.Fits t → ∀ (r : List UInt8), Inkproof.Gpu.decodeArg t (a.encode ++ r) = Option.some (a, r)
+def Inkproof.Gpu.decodeArgs : List Inkproof.Gpu.FieldTy → List UInt8 → Option (List Inkproof.Gpu.Arg × List UInt8)
+theorem Inkproof.Gpu.decodeArgs_encode : ∀ {as : List Inkproof.Gpu.Arg} {ts : List Inkproof.Gpu.FieldTy}, Inkproof.Gpu.ArgsFit as ts → ∀ (r : List UInt8), Inkproof.Gpu.decodeArgs ts (Inkproof.Gpu.encodeArgs as ++ r) = Option.some (as, r)
+def Inkproof.Gpu.decodeCmd : List UInt8 → Option (Inkproof.Gpu.Cmd × List UInt8)
+theorem Inkproof.Gpu.decodeCmd_encode : ∀ {c : Inkproof.Gpu.Cmd}, c.WellFormed → ∀ (r : List UInt8), Inkproof.Gpu.decodeCmd (c.encode ++ r) = Option.some (c, r)
+def Inkproof.Gpu.decodeCmds : Nat → List UInt8 → Option (List Inkproof.Gpu.Cmd × List UInt8)
+theorem Inkproof.Gpu.decodeCmds_encode : ∀ {cs : List Inkproof.Gpu.Cmd}, (∀ (c : Inkproof.Gpu.Cmd), c ∈ cs → c.WellFormed) → ∀ (r : List UInt8), Inkproof.Gpu.decodeCmds cs.length (List.flatMap Inkproof.Gpu.Cmd.encode cs ++ r) = Option.some (cs, r)
+def Inkproof.Gpu.decodeWords : Nat → List UInt8 → Option (List UInt32 × List UInt8)
+theorem Inkproof.Gpu.decodeWords_flatMap : ∀ (ws : List UInt32) (r : List UInt8), Inkproof.Gpu.decodeWords ws.length (List.flatMap Inkproof.Gpu.le32 ws ++ r) = Option.some (ws, r)
+theorem Inkproof.Gpu.decode_encode : ∀ {cs : List Inkproof.Gpu.Cmd}, (∀ (c : Inkproof.Gpu.Cmd), c ∈ cs → c.WellFormed) → cs.length < UInt32.size → Inkproof.Gpu.decode (Inkproof.Gpu.encode cs) = Option.some cs
+def Inkproof.Gpu.encode : List Inkproof.Gpu.Cmd → List UInt8
+def Inkproof.Gpu.encodeArgs : List Inkproof.Gpu.Arg → List UInt8
+def Inkproof.Gpu.fragmentShader : Inkproof.Gpu.Shader.Shader
+theorem Inkproof.Gpu.fragmentShader_wellTyped : Inkproof.Gpu.fragmentShader.WellTyped
+def Inkproof.Gpu.get32 : List UInt8 → Option (UInt32 × List UInt8)
+theorem Inkproof.Gpu.get32_le32 : ∀ (n : UInt32) (r : List UInt8), Inkproof.Gpu.get32 (Inkproof.Gpu.le32 n ++ r) = Option.some (n, r)
+instance Inkproof.Gpu.instDecidableEqArg : DecidableEq Inkproof.Gpu.Arg
+def Inkproof.Gpu.instDecidableEqArg.decEq : (x x_1 : Inkproof.Gpu.Arg) → Decidable (x = x_1)
+instance Inkproof.Gpu.instDecidableEqCmd : DecidableEq Inkproof.Gpu.Cmd
+def Inkproof.Gpu.instDecidableEqCmd.decEq : (x x_1 : Inkproof.Gpu.Cmd) → Decidable (x = x_1)
+instance Inkproof.Gpu.instDecidableEqFieldTy : DecidableEq Inkproof.Gpu.FieldTy
+instance Inkproof.Gpu.instReprArg : Repr Inkproof.Gpu.Arg
+def Inkproof.Gpu.instReprArg.repr : Inkproof.Gpu.Arg → Nat → Std.Format
+instance Inkproof.Gpu.instReprCmd : Repr Inkproof.Gpu.Cmd
+def Inkproof.Gpu.instReprCmd.repr : Inkproof.Gpu.Cmd → Nat → Std.Format
+instance Inkproof.Gpu.instReprFieldTy : Repr Inkproof.Gpu.FieldTy
+def Inkproof.Gpu.instReprFieldTy.repr : Inkproof.Gpu.FieldTy → Nat → Std.Format
+def Inkproof.Gpu.js : String
+def Inkproof.Gpu.jsRunCase : Inkproof.Gpu.Spec → String
+theorem Inkproof.Gpu.jsRunCase_eq : ∀ (s : Inkproof.Gpu.Spec), Inkproof.Gpu.jsRunCase s = ToString.toString " case " ++ ToString.toString s.op ++ ToString.toString ": {\n" ++ ToString.toString ("\n".intercalate (List.map (fun x => " " ++ x) (Inkproof.Gpu.webglBody s.name))) ++ ToString.toString "\n break;\n }"
+def Inkproof.Gpu.jsSpecCase : Inkproof.Gpu.Spec → String
+theorem Inkproof.Gpu.jsSpecCase_eq : ∀ (s : Inkproof.Gpu.Spec), Inkproof.Gpu.jsSpecCase s = ToString.toString " case " ++ ToString.toString s.op ++ ToString.toString ": return { op: " ++ ToString.toString s.op ++ ToString.toString ", name: \"" ++ ToString.toString s.name ++ ToString.toString "\", args: [" ++ ToString.toString (", ".intercalate (List.map Inkproof.Gpu.FieldTy.jsRead s.fields)) ++ ToString.toString "] };"
+def Inkproof.Gpu.le32 : UInt32 → List UInt8
+theorem Inkproof.Gpu.placed_mul_add : ∀ (v : Rat), 0 < v → ∀ (x s c : Float32) (t : Rat), Inkproof.Gpu.Placeable v x s c t → Inkproof.Gpu.Placed v (x * s + c) t
+def Inkproof.Gpu.specOf : UInt8 → Option Inkproof.Gpu.Spec
+def Inkproof.Gpu.specs : List Inkproof.Gpu.Spec
+def Inkproof.Gpu.vertexShader : Inkproof.Gpu.Shader.Shader
+theorem Inkproof.Gpu.vertexShader_placement : ∀ (v : Rat), 0 < v → ∀ (env : String → Option (List Float32)) (x y a b c d : Float32) (tx ty : Rat), env "a_position" = Option.some [x, y] → env "u_slope" = Option.some [a, b] → env "u_offset" = Option.some [c, d] → Inkproof.Gpu.Placeable v x a c tx → Inkproof.Gpu.Placeable v y b d ty → ∃ X Y, Inkproof.Gpu.vertexShader.run env = Option.some [("gl_Position", [X, Y, 0, 1])] ∧ Inkproof.Gpu.Placed v X tx ∧ Inkproof.Gpu.Placed v Y ty
+theorem Inkproof.Gpu.vertexShader_run : ∀ (env : String → Option (List Float32)) (x y a b c d : Float32), env "a_position" = Option.some [x, y] → env "u_slope" = Option.some [a, b] → env "u_offset" = Option.some [c, d] → Inkproof.Gpu.vertexShader.run env = Option.some [("gl_Position", [x * a + c, y * b + d, 0, 1])]
+theorem Inkproof.Gpu.vertexShader_wellTyped : Inkproof.Gpu.vertexShader.WellTyped
+def Inkproof.Gpu.webglBody : String → List String
+theorem Inkproof.Gpu.webglBody_createBuffer : Inkproof.Gpu.webglBody "createBuffer" = ["s.buffers.set(a[0], gl.createBuffer());"]
+theorem Inkproof.Gpu.webglBody_unknown : ∀ (n : String), ¬n ∈ ["createBuffer", "bufferData", "deleteBuffer", "useProgram", "uniform", "draw", "clear"] → Inkproof.Gpu.webglBody n = []
+theorem Inkproof.Gpu.webglBody_useProgram : Inkproof.Gpu.webglBody "useProgram" = ["gl.useProgram(s.programs.get(a[0]));"]

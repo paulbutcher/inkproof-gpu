@@ -12,9 +12,15 @@ package «inkproof-gpu» where
     ⟨`warningAsError, true⟩
   ]
 
+require «inkproof-float» from git "https://github.com/paulbutcher/inkproof-float" @ "v0.4.0"
+
 @[default_target]
 lean_lib InkproofGpu where
-  roots := #[`Inkproof.Gpu]
+  roots := #[`Inkproof.Gpu, `Inkproof.Gpu.Proofs]
+
+lean_exe gen where
+  root := `Main
+  srcDir := "gen"
 
 @[test_driver]
 script tests do
