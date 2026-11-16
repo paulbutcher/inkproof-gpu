@@ -5,3 +5,4 @@ Released under Apache 2.0 license as described in the file LICENSE.
 import Inkproof.Gpu.Proofs.Placement
 import Inkproof.Gpu.Proofs.Compile
 import Inkproof.Gpu.Proofs.Shader
+import Inkproof.Gpu.Proofs.Tessellate

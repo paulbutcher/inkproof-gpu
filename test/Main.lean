@@ -29,6 +29,25 @@ def cmd (layer : Nat) (x : Int) : Command :=
 
 def tess (c : Inkproof.Scene.Command) : List UInt32 := [UInt32.ofNat c.layer, 0, 1, 1, 2, 2]
 
+open Inkproof.Scene in
+def inTri (t : Tri) (p : Pt) : Bool :=
+  let d (a b : Pt) : Rat := (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y)
+  let (d1, d2, d3) := (d t.a t.b, d t.b t.c, d t.c t.a)
+  !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0))
+
+open Inkproof.Scene in
+def discPoints (c : Pt) (r : Int) : List Pt :=
+  let ks : List Int := (List.range (2 * r.toNat + 1)).map fun (i : Nat) => (i : Int) - r
+  (ks.flatMap fun i => ks.map fun j => (i, j)).filterMap fun (i, j) =>
+    if i * i + j * j ≤ r * r then some ⟨c.x + i, c.y + j⟩ else none
+
+open Inkproof.Scene in
+def shapes : List Shape :=
+  [.rect ⟨1, 2, 5, 9⟩, .marker .circle ⟨3, 4⟩ 2, .marker .square ⟨3, 4⟩ 2,
+   .strip 1 [.val ⟨0, 0⟩, .val ⟨4, 1⟩, .gap, .val ⟨6, 6⟩],
+   .area 0 [.val ⟨0, 3⟩, .val ⟨2, 5⟩], .envelope [.val ⟨0, 1, 3⟩, .val ⟨2, 2, 6⟩],
+   .text ⟨0, 0, 3, 3⟩ "a", .clipped ⟨0, 0, 1, 1⟩ (.rect ⟨0, 0, 4, 4⟩)]
+
 def tiles (u : UInt32) : List Tile :=
   [⟨#[cmd 2 0, cmd 0 1], [u]⟩, ⟨#[cmd 1 2], [u + 1]⟩]
 
@@ -62,5 +81,15 @@ def main (args : List String) : IO UInt32 :=
     ⟨"compiled frame survives the wire",
       let (_, cmds) := compileCmds tess {} (tiles 0)
       check (decode (encode cmds) == some cmds) "round trip"⟩,
+    ⟨"every shape tessellates to whole triangles",
+      check (shapes.all fun sh =>
+        (tessellate ⟨0, 0⟩ ⟨0, ⟨0, 0, 0, 255⟩, sh⟩).length % 6 == 0 &&
+        !(tessellate ⟨0, 0⟩ ⟨0, ⟨0, 0, 0, 255⟩, sh⟩).isEmpty) "ragged or empty"⟩,
+    ⟨"moving the origin to the shape gives the shape at the origin",
+      check (tessellate ⟨4, 8⟩ ⟨0, ⟨0, 0, 0, 255⟩, .rect ⟨5, 9, 7, 10⟩⟩ ==
+        tessellate ⟨0, 0⟩ ⟨0, ⟨0, 0, 0, 255⟩, .rect ⟨1, 1, 3, 2⟩⟩) "differs"⟩,
+    ⟨"the octagon contains the circle",
+      check ((discPoints ⟨3, -2⟩ 10).all fun p =>
+        (Inkproof.Gpu.triangles (.marker .circle ⟨3, -2⟩ 10)).any (inTri · p)) "point outside"⟩,
     ⟨"unknown opcode is rejected", check (decode (encode [⟨200, []⟩]) == none) "accepted"⟩
   ]
