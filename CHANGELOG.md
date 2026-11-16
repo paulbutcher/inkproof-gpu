@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.5.0]
+
+- Adds `tessellate`, which turns a Scene command into the vertex words `compile` takes, with theorems that its triangles cover the command's shape.
+
 ## [0.4.0]
 
 - Adds a `createProgram` command, so the generated interpreter builds the renderer's program, numbers its uniforms and binds vertices, and draws visible geometry on WebGL2.
