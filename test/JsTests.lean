@@ -51,8 +51,12 @@ def triangle : List Cmd := [
   ⟨5, [.u32 2, .u32 3]⟩
 ]
 
+/-- The commands with a scissor, given as words, set just before the draw. -/
+def scissored (cs : List Cmd) (ws : List Int) : List Cmd :=
+  cs.flatMap fun c => if c.op == 5 then [⟨8, [.words (ws.map fun v => UInt32.ofNat (Int.toNat v))]⟩, c] else [c]
+
 /-- Runs the generated interpreter on a WebGL2 context in headless Chromium and reads back the centre pixel. -/
-def drawsTriangle (dir : System.FilePath) (cs : List Cmd) : IO Bool := do
+def drawsTriangle (dir : System.FilePath) (cs : List Cmd) (expected : String) : IO Bool := do
   IO.FS.writeFile (dir / "gpu.mjs") js
   let bytes := ", ".intercalate ((encode cs).map (toString ·.toNat))
   let script := s!"import \{ chromium } from \"playwright\";
@@ -73,13 +77,18 @@ await browser.close();
 console.log(JSON.stringify(px));"
   let out ← IO.Process.output { cmd := "node", args := #["--input-type=module", "-e", script] }
   IO.eprint out.stderr
-  return out.exitCode == 0 && out.stdout.trimAscii.toString == "{\"px\":[255,0,0,255],\"err\":0}"
+  return out.exitCode == 0 && out.stdout.trimAscii.toString == expected
 
 def main : IO UInt32 := do
   let dir : System.FilePath := "/tmp/inkproof-gpu-test"
   IO.FS.createDirAll dir
   if !(← jsDecodes dir sample) then return ← fail "generated JavaScript decoder"
-  if !(← drawsTriangle dir triangle) then return ← fail "triangle drawn in headless Chromium"
+  if !(← drawsTriangle dir triangle "{\"px\":[255,0,0,255],\"err\":0}") then
+    return ← fail "triangle drawn in headless Chromium"
+  if !(← drawsTriangle dir (scissored triangle [0, 0, 4, 4]) "{\"px\":[0,0,0,255],\"err\":0}") then
+    return ← fail "scissor excludes the centre"
+  if !(← drawsTriangle dir (scissored triangle [4, 4, 8, 8]) "{\"px\":[255,0,0,255],\"err\":0}") then
+    return ← fail "scissor keeps the centre"
   for (name, text) in [("gpu.js", js), ("vertex.glsl", vertexShader.glsl),
       ("fragment.glsl", fragmentShader.glsl)] do
     if (← IO.FS.readFile s!"../generated/{name}") != text then

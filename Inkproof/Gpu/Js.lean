@@ -21,7 +21,7 @@ def uniformNames : List String :=
 
 theorem uniformNames_eq : uniformNames = ["u_slope", "u_offset", "u_colour"] := rfl
 
-/-- The WebGL2 realisation of each command, over `gl`, the context, and `s`, the interpreter state. `createProgram` builds the renderer's program, and `uniform` takes the number of a uniform of that program; `draw` reads each vertex as two floats bound to attribute 0. -/
+/-- The WebGL2 realisation of each command, over `gl`, the context, and `s`, the interpreter state. `createProgram` builds the renderer's program, and `uniform` takes the number of a uniform of that program; `draw` reads each vertex as two floats bound to attribute 0, and `scissor` takes four 32-bit integers (x, y, width, height from the bottom left) or none to draw unrestricted. -/
 def webglBody : String → List String
   | "createBuffer" => ["s.buffers.set(a[0], gl.createBuffer());"]
   | "bufferData" => ["gl.bindBuffer(gl.ARRAY_BUFFER, s.buffers.get(a[0]));",
@@ -36,6 +36,9 @@ def webglBody : String → List String
   | "clear" => ["gl.clearColor((a[0] >>> 24) / 255, ((a[0] >>> 16) & 255) / 255,",
       "  ((a[0] >>> 8) & 255) / 255, (a[0] & 255) / 255);", "gl.clear(gl.COLOR_BUFFER_BIT);"]
   | "createProgram" => ["s.programs.set(a[0], buildProgram(gl));"]
+  | "scissor" => ["const w = new Int32Array(a[0].buffer);",
+      "if (w.length === 4) { gl.enable(gl.SCISSOR_TEST); gl.scissor(w[0], w[1], w[2], w[3]); }",
+      "else { gl.disable(gl.SCISSOR_TEST); }"]
   | _ => []
 
 theorem webglBody_createBuffer :
@@ -48,7 +51,7 @@ theorem webglBody_createProgram :
     webglBody "createProgram" = ["s.programs.set(a[0], buildProgram(gl));"] := rfl
 
 theorem webglBody_unknown (n : String) (h : n ∉ ["createBuffer", "bufferData", "deleteBuffer",
-    "useProgram", "uniform", "draw", "clear", "createProgram"]) : webglBody n = [] := by
+    "useProgram", "uniform", "draw", "clear", "createProgram", "scissor"]) : webglBody n = [] := by
   unfold webglBody
   split <;> simp_all
 

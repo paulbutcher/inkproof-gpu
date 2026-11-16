@@ -8,7 +8,7 @@ A command list is one buffer: a little-endian 32-bit command count, then each co
 
 ## Compiling a display list
 
-`compile` turns a view's tiles (a display list and the transform uniform) into `Op`s; `Op.toCmd` gives the wire command. The caller supplies `tess`, the vertex words of one command, and its raster fidelity is outside the theorems. Buffers are cached by content, so a tile whose vertex words match a cached entry reuses its buffers and pan and zoom upload nothing. Unused buffers are deleted and handles are never reused. A frame sets the uniform and draws once per command, in layer order; the host binds the program.
+`compile` turns a view's tiles (a display list, the transform uniforms and a map from clip rectangles to scissor words) into `Op`s; `Op.toCmd` gives the wire command. The caller supplies `tess`, the vertex words of one command, and its raster fidelity is outside the theorems. Buffers are cached by content, so a tile whose vertex words match a cached entry reuses its buffers and pan and zoom upload nothing. Unused buffers are deleted and handles are never reused. A frame sets the state (the three uniforms and the scissor) and draws once per command, in layer order; the host binds the program. The scissor is four Int32 words (x, y, width, height in device pixels from the bottom left) that `Tile.scissor` computes from a clip rectangle in grid coordinates, or none for no restriction; a command whose clips leave nothing gets an empty scissor. `clipRect_region` states that no point of a shape lies outside the rectangle it is scissored to.
 
 The theorems are stated against `Gpu` in `Proofs/Compile.lean`, an abstract model of buffers, uniform and draw log. Handles go on the wire modulo `2 ^ 32`, so the model is exact only while fewer than that many buffers are allocated.
 
@@ -16,11 +16,11 @@ The theorems are stated against `Gpu` in `Proofs/Compile.lean`, an abstract mode
 
 `tessellate origin` is the `tess` that `compile` takes: the vertex words of one command, as three vertices per triangle, each vertex two Float32 words (x then y, little-endian on the wire like all words) holding the position relative to `origin`, a point in grid coordinates that the caller also uses as the tile origin. Coordinates are converted from Scene's exact rationals to Float32 after subtracting the origin, so a tile's words do not depend on where it sits.
 
-`triangles` gives the triangles in grid coordinates. Rectangles, text boxes and square markers are two triangles; a strip is Scene's `stripTriangles`; an area or envelope is two triangles per column pair; a circle marker is an octagon fan that contains the circle. A clipped shape gives the triangles of the shape it clips, so it needs a scissor, which the command set does not yet have.
+`triangles` gives the triangles in grid coordinates. Rectangles, text boxes and square markers are two triangles; a strip is Scene's `stripTriangles`; an area or envelope is two triangles per column pair; a circle marker is an octagon fan that contains the circle. A clipped shape gives the triangles of the shape it clips; the scissor keeps the drawing inside the clip box.
 
 `region_sub_triangles` states that every point of a polygonal shape lies in one of its triangles, and `covers_triangles` that a command's covered pixels each meet a triangle. Circles are excluded: the octagon containing the circle is checked by a test, not proved. How a GPU rasterises a triangle, which pixels it samples, is outside the theorems.
 
-The renderer's uniforms are `u_slope` and `u_offset` (two floats each) and `u_colour` (four floats, the command's colour as red, green, blue and alpha in 0 to 1). For a map from grid coordinates to clip space `clip = A * p + B` computed in double precision, a tile with origin `o` takes `u_slope = A` and `u_offset = A * o + B`, so that `(p - o) * u_slope + u_offset = clip`. `compile` sets only the first uniform from `Tile.uniform` so far.
+The renderer's uniforms are `u_slope` and `u_offset` (two floats each) and `u_colour` (four floats, the command's colour as red, green, blue and alpha in 0 to 1). For a map from grid coordinates to clip space `clip = A * p + B` computed in double precision, a tile with origin `o` takes `u_slope = A` and `u_offset = A * o + B`, so that `(p - o) * u_slope + u_offset = clip`. Before each draw `compile` sets `u_slope` and `u_offset` from the tile (`Tile.slope`, `Tile.offset`), `u_colour` from the command's colour (`colourWords`), and the scissor.
 
 ## Shader language
 

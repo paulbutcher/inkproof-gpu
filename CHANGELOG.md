@@ -2,6 +2,7 @@
 
 ## [0.5.0]
 
+- Adds a `scissor` command, and `compile` now sets `u_slope`, `u_offset`, `u_colour` and the scissor before every draw, so clipped shapes and colours draw; a `Tile` carries `slope`, `offset` and a `scissor` map in place of `uniform`.
 - Adds `tessellate`, which turns a Scene command into the vertex words `compile` takes, with theorems that its triangles cover the command's shape.
 
 ## [0.4.0]
