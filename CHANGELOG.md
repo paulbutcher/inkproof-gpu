@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.5.1]
+
+- Tests the generated JavaScript under Lasm 0.8.0.
+
 ## [0.5.0]
 
 - Adds a `scissor` command, and `compile` now sets `u_slope`, `u_offset`, `u_colour` and the scissor before every draw, so clipped shapes and colours draw; a `Tile` carries `slope`, `offset` and a `scissor` map in place of `uniform`.
