@@ -12,6 +12,10 @@ A command list is one buffer: a little-endian 32-bit command count, then each co
 
 The theorems are stated against `Gpu` in `Proofs/Compile.lean`, an abstract model of buffers, uniform and draw log. Handles go on the wire modulo `2 ^ 32`, so the model is exact only while fewer than that many buffers are allocated.
 
+## Frame of a pixel-grid chart
+
+`pixelTile w h list` is the tile of a display list in device pixels from the top left of a `w` by `h` target, with origin at the top left pixel: slope `(2/w, -2/h)` and offset `(-1, 1)` rounded to Float32, taken from the `Scale.Affine` maps `pixelX` and `pixelY` (`pixelX_apply` and `pixelY_apply` state the exact maps, `2x/w - 1` and `1 - 2y/h`), and a scissor that flips y and clamps to the target (`pixelBox_covers`). `frame` is `frameSetup` (build the program when the context is fresh, use it, lift the scissor, clear) followed by `compile` of that one tile; the scissor is lifted first because `clear` respects it. `frame_roundtrip` states that it survives encode and decode.
+
 ## Tessellation
 
 `tessellate origin` is the `tess` that `compile` takes: the vertex words of one command, as three vertices per triangle, each vertex two Float32 words (x then y, little-endian on the wire like all words) holding the position relative to `origin`, a point in grid coordinates that the caller also uses as the tile origin. Coordinates are converted from Scene's exact rationals to Float32 after subtracting the origin, so a tile's words do not depend on where it sits.

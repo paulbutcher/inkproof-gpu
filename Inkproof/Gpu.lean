@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import Inkproof.Gpu.Wire
 import Inkproof.Gpu.Compile
+import Inkproof.Gpu.Frame
 import Inkproof.Gpu.Tessellate
 import Inkproof.Gpu.Js
 import Inkproof.Gpu.Shaders

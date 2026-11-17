@@ -51,6 +51,7 @@ field Inkproof.Gpu.Item.state : Inkproof.Gpu.Item → Inkproof.Gpu.State
 def Inkproof.Gpu.Item.toDraw : Inkproof.Gpu.Item → Inkproof.Gpu.Draw
 field Inkproof.Gpu.Item.words : Inkproof.Gpu.Item → List UInt32
 inductive Inkproof.Gpu.Op : Type
+def Inkproof.Gpu.Op.Fits : Inkproof.Gpu.Op → Prop
 def Inkproof.Gpu.Op.IsSetup : Inkproof.Gpu.Op → Prop
 def Inkproof.Gpu.Op.IsUpload : Inkproof.Gpu.Op → Prop
 constructor Inkproof.Gpu.Op.create : Nat → Inkproof.Gpu.Op
@@ -199,6 +200,8 @@ theorem Inkproof.Gpu.box_sub_boxTriangles : ∀ {x0 y0 x1 y1 : Rat} {p : Inkproo
 theorem Inkproof.Gpu.cached_eq_fresh : ∀ (tess : Inkproof.Scene.Command → List UInt32) (c : Inkproof.Gpu.Cache) (tiles : List Inkproof.Gpu.Tile) (g : Inkproof.Gpu.Gpu), c.Valid g → (g.run (Inkproof.Gpu.compile tess c tiles).snd).log = g.log ++ Inkproof.Gpu.frameDraws tess tiles ∧ (Inkproof.Gpu.Gpu.empty.run (Inkproof.Gpu.compile tess { } tiles).snd).log = Inkproof.Gpu.frameDraws tess tiles
 def Inkproof.Gpu.chainTriangles : {α : Type} → (α → List Inkproof.Scene.Tri) → (α → α → List Inkproof.Scene.Tri) → List (Inkproof.Scene.Item α) → List Inkproof.Scene.Tri
 theorem Inkproof.Gpu.chain_sub_chainTriangles : ∀ {α : Type} {single : α → Inkproof.Scene.Region} {join : α → α → Inkproof.Scene.Region} {ts : α → List Inkproof.Scene.Tri} {tj : α → α → List Inkproof.Scene.Tri}, (∀ (a : α) (p : Inkproof.Scene.Pt), single a p → ∃ t, t ∈ ts a ∧ t.region p) → (∀ (a b : α) (p : Inkproof.Scene.Pt), join a b p → ∃ t, t ∈ tj a b ∧ t.region p) → ∀ (items : List (Inkproof.Scene.Item α)) (p : Inkproof.Scene.Pt), Inkproof.Scene.Item.chain single join items p → ∃ t, t ∈ Inkproof.Gpu.chainTriangles ts tj items ∧ t.region p
+def Inkproof.Gpu.clearWord : Inkproof.Scene.Color → UInt32
+theorem Inkproof.Gpu.clearWord_toNat : ∀ (c : Inkproof.Scene.Color), (Inkproof.Gpu.clearWord c).toNat = c.r.toNat * 2 ^ 24 + c.g.toNat * 2 ^ 16 + c.b.toNat * 2 ^ 8 + c.a.toNat
 def Inkproof.Gpu.clipRect : Inkproof.Scene.Shape → Option (Option Inkproof.Scene.Rect)
 theorem Inkproof.Gpu.clipRect_region : ∀ (s : Inkproof.Scene.Shape) (p : Inkproof.Scene.Pt), s.region p → match Inkproof.Gpu.clipRect s with | Option.none => True | Option.some Option.none => False | Option.some (Option.some r) => r.Holds p
 def Inkproof.Gpu.colourWords : Inkproof.Scene.Color → List UInt32
@@ -208,6 +211,7 @@ def Inkproof.Gpu.compile : (Inkproof.Scene.Command → List UInt32) → Inkproof
 def Inkproof.Gpu.compileCmds : (Inkproof.Scene.Command → List UInt32) → Inkproof.Gpu.Cache → List Inkproof.Gpu.Tile → Inkproof.Gpu.Cache × List Inkproof.Gpu.Cmd
 theorem Inkproof.Gpu.compileCmds_eq : ∀ (tess : Inkproof.Scene.Command → List UInt32) (c : Inkproof.Gpu.Cache) (tiles : List Inkproof.Gpu.Tile), Inkproof.Gpu.compileCmds tess c tiles = ((Inkproof.Gpu.compile tess c tiles).fst, List.map Inkproof.Gpu.Op.toCmd (Inkproof.Gpu.compile tess c tiles).snd)
 theorem Inkproof.Gpu.compile_cached : ∀ (tess : Inkproof.Scene.Command → List UInt32) (c : Inkproof.Gpu.Cache) (tiles : List Inkproof.Gpu.Tile), (∀ (t : Inkproof.Gpu.Tile), t ∈ tiles → Inkproof.Gpu.Tile.Cached tess c t) → ∀ (o : Inkproof.Gpu.Op), o ∈ (Inkproof.Gpu.compile tess c tiles).snd → ¬o.IsUpload
+theorem Inkproof.Gpu.compile_fits : ∀ (tess : Inkproof.Scene.Command → List UInt32) (c : Inkproof.Gpu.Cache) (tiles : List Inkproof.Gpu.Tile), (∀ (x : Inkproof.Scene.Command), (tess x).length < UInt32.size) → (∀ (t : Inkproof.Gpu.Tile), t ∈ tiles → t.slope.length < UInt32.size ∧ t.offset.length < UInt32.size ∧ ∀ (r : Inkproof.Scene.Rect), (t.scissor r).length < UInt32.size) → ∀ (o : Inkproof.Gpu.Op), o ∈ (Inkproof.Gpu.compile tess c tiles).snd → o.Fits
 theorem Inkproof.Gpu.compile_log : ∀ (tess : Inkproof.Scene.Command → List UInt32) (c : Inkproof.Gpu.Cache) (tiles : List Inkproof.Gpu.Tile) (g : Inkproof.Gpu.Gpu), c.Valid g → (g.run (Inkproof.Gpu.compile tess c tiles).snd).log = g.log ++ Inkproof.Gpu.frameDraws tess tiles ∧ (Inkproof.Gpu.compile tess c tiles).fst.Valid (g.run (Inkproof.Gpu.compile tess c tiles).snd)
 theorem Inkproof.Gpu.compile_valid : ∀ (tess : Inkproof.Scene.Command → List UInt32) (c : Inkproof.Gpu.Cache) (tiles : List Inkproof.Gpu.Tile) (g : Inkproof.Gpu.Gpu), c.Valid g → (Inkproof.Gpu.compile tess c tiles).fst.Valid (g.run (Inkproof.Gpu.compile tess c tiles).snd)
 theorem Inkproof.Gpu.covers_triangles : ∀ {c : Inkproof.Scene.Command}, Inkproof.Gpu.Polygonal c.shape → ∀ {px : Inkproof.Scene.Pixel}, c.Covers px → ∃ t, t ∈ Inkproof.Gpu.triangles c.shape ∧ t.region.Covers px
@@ -228,7 +232,13 @@ def Inkproof.Gpu.encode : List Inkproof.Gpu.Cmd → List UInt8
 def Inkproof.Gpu.encodeArgs : List Inkproof.Gpu.Arg → List UInt8
 def Inkproof.Gpu.fragmentShader : Inkproof.Gpu.Shader.Shader
 theorem Inkproof.Gpu.fragmentShader_wellTyped : Inkproof.Gpu.fragmentShader.WellTyped
+def Inkproof.Gpu.frame : (Inkproof.Scene.Command → List UInt32) → Inkproof.Gpu.Cache → Bool → Nat → Nat → Inkproof.Scene.DisplayList → Inkproof.Scene.Color → Inkproof.Gpu.Cache × List Inkproof.Gpu.Cmd
 def Inkproof.Gpu.frameDraws : (Inkproof.Scene.Command → List UInt32) → List Inkproof.Gpu.Tile → List Inkproof.Gpu.Draw
+def Inkproof.Gpu.frameSetup : Bool → Inkproof.Scene.Color → List Inkproof.Gpu.Cmd
+theorem Inkproof.Gpu.frameSetup_fresh : ∀ (bg : Inkproof.Scene.Color), Inkproof.Gpu.frameSetup Bool.true bg = [{ op := 7, args := [Inkproof.Gpu.Arg.u32 Inkproof.Gpu.programHandle] }] ++ Inkproof.Gpu.frameSetup Bool.false bg
+theorem Inkproof.Gpu.frameSetup_stale : ∀ (bg : Inkproof.Scene.Color), Inkproof.Gpu.frameSetup Bool.false bg = [{ op := 3, args := [Inkproof.Gpu.Arg.u32 Inkproof.Gpu.programHandle] }, { op := 8, args := [Inkproof.Gpu.Arg.words []] }, { op := 6, args := [Inkproof.Gpu.Arg.u32 (Inkproof.Gpu.clearWord bg)] }]
+theorem Inkproof.Gpu.frame_eq : ∀ (tess : Inkproof.Scene.Command → List UInt32) (c : Inkproof.Gpu.Cache) (fresh : Bool) (w h : Nat) (list : Inkproof.Scene.DisplayList) (bg : Inkproof.Scene.Color), Inkproof.Gpu.frame tess c fresh w h list bg = ((Inkproof.Gpu.compile tess c [Inkproof.Gpu.pixelTile w h list]).fst, Inkproof.Gpu.frameSetup fresh bg ++ List.map Inkproof.Gpu.Op.toCmd (Inkproof.Gpu.compile tess c [Inkproof.Gpu.pixelTile w h list]).snd)
+theorem Inkproof.Gpu.frame_roundtrip : ∀ (tess : Inkproof.Scene.Command → List UInt32) (c : Inkproof.Gpu.Cache) (fresh : Bool) (w h : Nat) (list : Inkproof.Scene.DisplayList) (bg : Inkproof.Scene.Color), (∀ (x : Inkproof.Scene.Command), (tess x).length < UInt32.size) → (Inkproof.Gpu.frame tess c fresh w h list bg).snd.length < UInt32.size → Inkproof.Gpu.decode (Inkproof.Gpu.encode (Inkproof.Gpu.frame tess c fresh w h list bg).snd) = Option.some (Inkproof.Gpu.frame tess c fresh w h list bg).snd
 def Inkproof.Gpu.get32 : List UInt8 → Option (UInt32 × List UInt8)
 theorem Inkproof.Gpu.get32_le32 : ∀ (n : UInt32) (r : List UInt8), Inkproof.Gpu.get32 (Inkproof.Gpu.le32 n ++ r) = Option.some (n, r)
 instance Inkproof.Gpu.instDecidableCached : (tess : Inkproof.Scene.Command → List UInt32) → (c : Inkproof.Gpu.Cache) → (t : Inkproof.Gpu.Tile) → Decidable (Inkproof.Gpu.Tile.Cached tess c t)
@@ -258,7 +268,20 @@ theorem Inkproof.Gpu.jsSpecCase_eq : ∀ (s : Inkproof.Gpu.Spec), Inkproof.Gpu.j
 def Inkproof.Gpu.le32 : UInt32 → List UInt8
 def Inkproof.Gpu.octagonTriangles : Inkproof.Scene.Pt → Rat → List Inkproof.Scene.Tri
 theorem Inkproof.Gpu.octagonTriangles_length : ∀ (c : Inkproof.Scene.Pt) (r : Rat), (Inkproof.Gpu.octagonTriangles c r).length = 8
+def Inkproof.Gpu.pixelBox : Nat → Nat → Inkproof.Scene.Rect → Nat × Nat × Nat × Nat
+theorem Inkproof.Gpu.pixelBox_covers : ∀ (w h : Nat) (r : Inkproof.Scene.Rect) (i j : Nat), i < w → j < h → ↑i < r.x1 → r.x0 < ↑i + 1 → ↑j < r.y1 → r.y0 < ↑j + 1 → (Inkproof.Gpu.pixelBox w h r).fst ≤ i ∧ i < (Inkproof.Gpu.pixelBox w h r).fst + (Inkproof.Gpu.pixelBox w h r).snd.snd.fst ∧ (Inkproof.Gpu.pixelBox w h r).snd.fst ≤ h - 1 - j ∧ h - 1 - j < (Inkproof.Gpu.pixelBox w h r).snd.fst + (Inkproof.Gpu.pixelBox w h r).snd.snd.snd
+def Inkproof.Gpu.pixelScissor : Nat → Nat → Inkproof.Scene.Rect → List UInt32
+theorem Inkproof.Gpu.pixelScissor_eq : ∀ (w h : Nat) (r : Inkproof.Scene.Rect), Inkproof.Gpu.pixelScissor w h r = [(Inkproof.Gpu.pixelBox w h r).fst.toUInt32, (Inkproof.Gpu.pixelBox w h r).snd.fst.toUInt32, (Inkproof.Gpu.pixelBox w h r).snd.snd.fst.toUInt32, (Inkproof.Gpu.pixelBox w h r).snd.snd.snd.toUInt32]
+def Inkproof.Gpu.pixelTile : Nat → Nat → Inkproof.Scene.DisplayList → Inkproof.Gpu.Tile
+theorem Inkproof.Gpu.pixelTile_offset : ∀ (w h : Nat) (l : Inkproof.Scene.DisplayList), (Inkproof.Gpu.pixelTile w h l).offset = [(Inkproof.Gpu.ratToFloat32 (Inkproof.Gpu.pixelX w).offset).toBits, (Inkproof.Gpu.ratToFloat32 (Inkproof.Gpu.pixelY h).offset).toBits]
+theorem Inkproof.Gpu.pixelTile_slope : ∀ (w h : Nat) (l : Inkproof.Scene.DisplayList), (Inkproof.Gpu.pixelTile w h l).slope = [(Inkproof.Gpu.ratToFloat32 (Inkproof.Gpu.pixelX w).slope).toBits, (Inkproof.Gpu.ratToFloat32 (Inkproof.Gpu.pixelY h).slope).toBits]
+def Inkproof.Gpu.pixelX : Nat → Inkproof.Scale.Affine Rat
+theorem Inkproof.Gpu.pixelX_apply : ∀ (w : Nat) (x : Rat), (Inkproof.Gpu.pixelX w).apply x = 2 * x / ↑w - 1
+def Inkproof.Gpu.pixelY : Nat → Inkproof.Scale.Affine Rat
+theorem Inkproof.Gpu.pixelY_apply : ∀ (h : Nat) (y : Rat), (Inkproof.Gpu.pixelY h).apply y = 1 - 2 * y / ↑h
 theorem Inkproof.Gpu.placed_mul_add : ∀ (v : Rat), 0 < v → ∀ (x s c : Float32) (t : Rat), Inkproof.Gpu.Placeable v x s c t → Inkproof.Gpu.Placed v (x * s + c) t
+def Inkproof.Gpu.programHandle : UInt32
+theorem Inkproof.Gpu.programHandle_eq : Inkproof.Gpu.programHandle = 0
 def Inkproof.Gpu.ratToFloat32 : Rat → Float32
 theorem Inkproof.Gpu.region_sub_triangles : ∀ (s : Inkproof.Scene.Shape), Inkproof.Gpu.Polygonal s → ∀ (p : Inkproof.Scene.Pt), s.region p → ∃ t, t ∈ Inkproof.Gpu.triangles s ∧ t.region p
 def Inkproof.Gpu.spanTriangles : Rat → Rat → Rat → Rat → Rat → Rat → List Inkproof.Scene.Tri

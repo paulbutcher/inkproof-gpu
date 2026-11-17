@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.0]
+
+- Adds `pixelTile` and `frame`, the commands of a frame of a display list in device pixels from the top left, with theorems for the clip-space map, the scissor and the wire round trip.
+
 ## [0.5.1]
 
 - Tests the generated JavaScript under Lasm 0.8.0.
