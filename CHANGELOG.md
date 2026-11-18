@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.1]
+
+- Expresses `chainTriangles` through Scene's `Item.fold` (Scene v0.9.0), removing the private traversal.
+
 ## [0.6.0]
 
 - Adds `pixelTile` and `frame`, the commands of a frame of a display list in device pixels from the top left, with theorems for the clip-space map, the scissor and the wire round trip.
