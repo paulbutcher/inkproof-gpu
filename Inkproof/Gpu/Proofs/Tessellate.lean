@@ -84,32 +84,46 @@ theorem span_sub_spanTriangles {x0 x1 l0 l1 h0 h1 : Rat} {p : Pt}
     refine ⟨_, List.mem_cons_of_mem _ List.mem_cons_self, t * s, t * (1 - s), 1 - t,
       Rat.mul_nonneg ht0 hs0, Rat.mul_nonneg ht0 h1s, h1t, by grind, by grind, by grind⟩
 
+private theorem fold_covered {α : Type} {single : α → Region} {join : α → α → Region}
+    {ts : α → List Tri} {tj : α → α → List Tri}
+    (hs : ∀ a p, single a p → ∃ t ∈ ts a, t.region p)
+    (hj : ∀ a b p, join a b p → ∃ t ∈ tj a b, t.region p) :
+    ∀ (items : List (Item α)) (x : Region), x ∈ Item.fold single join items →
+      ∃ l ∈ Item.fold ts tj items, ∀ p, x p → ∃ t ∈ l, t.region p
+  | [], _, h => by simp [Item.fold] at h
+  | .gap :: rest, x, h => by
+    rw [Item.fold_gap] at h ⊢
+    exact fold_covered hs hj rest x h
+  | [.val a], x, h => by
+    rw [Item.fold_val_nil] at h ⊢
+    simp only [List.mem_singleton] at h
+    exact ⟨ts a, by simp, h ▸ hs a⟩
+  | .val a :: .gap :: rest, x, h => by
+    rw [Item.fold_val_gap] at h ⊢
+    rcases List.mem_cons.1 h with rfl | h
+    · exact ⟨ts a, by simp, hs a⟩
+    · obtain ⟨l, hl, hx⟩ := fold_covered hs hj rest x h
+      exact ⟨l, List.mem_cons_of_mem _ hl, hx⟩
+  | .val a :: .val b :: rest, x, h => by
+    rw [Item.fold_val_val] at h ⊢
+    rcases List.mem_cons.1 h with rfl | h
+    · exact ⟨ts a, by simp, hs a⟩
+    rcases List.mem_cons.1 h with rfl | h
+    · exact ⟨tj a b, by simp, hj a b⟩
+    · obtain ⟨l, hl, hx⟩ := fold_covered hs hj (.val b :: rest) x h
+      exact ⟨l, by simp [hl], hx⟩
+
 theorem chain_sub_chainTriangles {α : Type} {single : α → Region} {join : α → α → Region}
     {ts : α → List Tri} {tj : α → α → List Tri}
     (hs : ∀ a p, single a p → ∃ t ∈ ts a, t.region p)
     (hj : ∀ a b p, join a b p → ∃ t ∈ tj a b, t.region p) :
     ∀ (items : List (Item α)) (p : Pt), Item.chain single join items p →
-      ∃ t ∈ chainTriangles ts tj items, t.region p
-  | [], _, h => by simp [Item.chain] at h
-  | .gap :: rest, p, h => by
-    simp only [Item.chain] at h
-    simpa [chainTriangles] using chain_sub_chainTriangles hs hj rest p h
-  | .val a :: rest, p, h => by
-    simp only [Item.chain] at h
-    simp only [chainTriangles]
-    rcases h with h | h | h
-    · obtain ⟨t, ht, hr⟩ := hs a p h
-      exact ⟨t, by simp [ht], hr⟩
-    · cases rest with
-      | nil => exact absurd h id
-      | cons i _ =>
-        cases i with
-        | gap => exact absurd h id
-        | val b =>
-          obtain ⟨t, ht, hr⟩ := hj a b p h
-          exact ⟨t, by simp [ht], hr⟩
-    · obtain ⟨t, ht, hr⟩ := chain_sub_chainTriangles hs hj rest p h
-      exact ⟨t, by simp [ht], hr⟩
+      ∃ t ∈ chainTriangles ts tj items, t.region p := by
+  intro items p h
+  obtain ⟨x, hx, hp⟩ := (Item.chain_eq_fold single join items p).1 h
+  obtain ⟨l, hl, hc⟩ := fold_covered hs hj items x hx
+  obtain ⟨t, ht, hr⟩ := hc p hp
+  exact ⟨t, by simp only [chainTriangles, List.mem_flatten]; exact ⟨l, hl, ht⟩, hr⟩
 
 /-- The shapes whose triangles are known to cover them: all but circles, which the octagon covers but without a proof, and strips of no width, which Scene's triangles do not cover. -/
 def Polygonal : Shape → Prop

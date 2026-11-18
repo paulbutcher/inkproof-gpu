@@ -17,15 +17,9 @@ def spanTriangles (x0 x1 l0 l1 h0 h1 : Rat) : List Tri :=
   [⟨⟨x0, l0⟩, ⟨x0, h0⟩, ⟨x1, l1⟩⟩, ⟨⟨x1, h1⟩, ⟨x1, l1⟩, ⟨x0, h0⟩⟩]
 
 /-- The triangles of a chain of items: those of each value and of each pair of adjacent values, with none across a gap. -/
-def chainTriangles {α : Type} (single : α → List Tri) (join : α → α → List Tri) :
-    List (Item α) → List Tri
-  | [] => []
-  | .gap :: rest => chainTriangles single join rest
-  | .val a :: rest =>
-    single a ++
-      (match rest with
-        | .val b :: _ => join a b
-        | _ => []) ++ chainTriangles single join rest
+def chainTriangles {α : Type} (single : α → List Tri) (join : α → α → List Tri)
+    (items : List (Item α)) : List Tri :=
+  (Item.fold single join items).flatten
 
 /-- The corner offset of the octagon around a circle, as a fraction of the radius. It is `tan (π / 8)`, rounded up. -/
 private def octagonSlope : Rat := 4143 / 10000
