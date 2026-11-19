@@ -233,6 +233,8 @@ def Inkproof.Gpu.encodeArgs : List Inkproof.Gpu.Arg → List UInt8
 def Inkproof.Gpu.fragmentShader : Inkproof.Gpu.Shader.Shader
 theorem Inkproof.Gpu.fragmentShader_wellTyped : Inkproof.Gpu.fragmentShader.WellTyped
 def Inkproof.Gpu.frame : (Inkproof.Scene.Command → List UInt32) → Inkproof.Gpu.Cache → Bool → Nat → Nat → Inkproof.Scene.DisplayList → Inkproof.Scene.Color → Inkproof.Gpu.Cache × List Inkproof.Gpu.Cmd
+def Inkproof.Gpu.frameBytes : Nat → Nat → Inkproof.Scene.DisplayList → Inkproof.Scene.Color → ByteArray
+theorem Inkproof.Gpu.frameBytes_eq : ∀ (w h : Nat) (list : Inkproof.Scene.DisplayList) (bg : Inkproof.Scene.Color), Inkproof.Gpu.frameBytes w h list bg = { data := (Inkproof.Gpu.encode (Inkproof.Gpu.frame (Inkproof.Gpu.tessellate { x := 0, y := 0 }) { } Bool.true w h list bg).snd).toArray }
 def Inkproof.Gpu.frameDraws : (Inkproof.Scene.Command → List UInt32) → List Inkproof.Gpu.Tile → List Inkproof.Gpu.Draw
 def Inkproof.Gpu.frameSetup : Bool → Inkproof.Scene.Color → List Inkproof.Gpu.Cmd
 theorem Inkproof.Gpu.frameSetup_fresh : ∀ (bg : Inkproof.Scene.Color), Inkproof.Gpu.frameSetup Bool.true bg = [{ op := 7, args := [Inkproof.Gpu.Arg.u32 Inkproof.Gpu.programHandle] }] ++ Inkproof.Gpu.frameSetup Bool.false bg

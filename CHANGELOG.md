@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.7.0]
+
+- Adds `frameBytes`, the wire bytes of a fresh frame of a display list in one call.
+
 ## [0.6.2]
 
 - Adds `releaseState` to the generated interpreter, which deletes the buffers and programs a state holds.

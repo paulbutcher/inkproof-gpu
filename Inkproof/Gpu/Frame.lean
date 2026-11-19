@@ -52,4 +52,8 @@ def frame (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) (w h
   let r := compileCmds tess c [pixelTile w h list]
   (r.1, frameSetup fresh bg ++ r.2)
 
+/-- The wire bytes of a fresh frame of `list` on a `w` by `h` target cleared to `bg`, for the interpreter to run on a new context. -/
+def frameBytes (w h : Nat) (list : Scene.DisplayList) (bg : Scene.Color) : ByteArray :=
+  ⟨(encode (frame (tessellate ⟨0, 0⟩) {} true w h list bg).2).toArray⟩
+
 end Inkproof.Gpu

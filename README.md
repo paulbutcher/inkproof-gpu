@@ -10,7 +10,7 @@ GPU command lists for Inkproof charts: the command set and its binary encoding, 
 - Turn a view's tiles of Scene display-list commands into GPU ops, caching vertex buffers by content so pan and zoom upload nothing: `compile`, `compileCmds`, `Cache`, `Tile`, `frameDraws`.
 - Tessellate Scene commands (rectangles, text boxes, markers, strips, areas, envelopes) into triangles, and into Float32 vertex words relative to a tile origin: `triangles`, `tessellate`, `triWords`, `vertexWords`.
 - Compute per-draw state: colour words, and the scissor rectangle for a clip: `colourWords`, `clipRect`, `Tile.stateOf`.
-- Draw a chart in device pixels from the top left of a target, with a scissor that flips y, and build the commands of a whole frame, setup and clear included: `pixelTile`, `pixelScissor`, `pixelBox`, `frame`, `frameSetup`.
+- Draw a chart in device pixels from the top left of a target, with a scissor that flips y, and build the commands of a whole frame, setup and clear included: `pixelTile`, `pixelScissor`, `pixelBox`, `frame`, `frameSetup`; get a fresh frame's wire bytes in one call with `frameBytes`.
 - Write shaders in a small Float32 language, evaluate them, and print GLSL ES 3.00: `Shader.Shader`, `Shader.Shader.run`, `Shader.Shader.glsl`, `Shader.Shader.WellTyped`.
 - Get the renderer's shaders and their uniform names: `vertexShader`, `fragmentShader`, `uniformNames` (printed to `generated/vertex.glsl` and `generated/fragment.glsl`).
 - Rely on proofs that tessellation covers what Scene's raster model draws, that decoding inverts encoding, and that vertex placement is within half a pixel: see `Inkproof/Gpu/Proofs/`.

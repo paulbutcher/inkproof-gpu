@@ -79,6 +79,11 @@ theorem frame_eq (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Boo
       ((compile tess c [pixelTile w h list]).1,
         frameSetup fresh bg ++ (compile tess c [pixelTile w h list]).2.map Op.toCmd) := rfl
 
+/-- `frameBytes` is the encoding of a fresh frame, tessellated at the origin with an empty cache. -/
+theorem frameBytes_eq (w h : Nat) (list : Scene.DisplayList) (bg : Scene.Color) :
+    frameBytes w h list bg =
+      ⟨(encode (frame (tessellate ⟨0, 0⟩) {} true w h list bg).2).toArray⟩ := rfl
+
 theorem programHandle_eq : programHandle = 0 := rfl
 
 /-- The operation's word lists fit the wire's 32-bit length. -/
