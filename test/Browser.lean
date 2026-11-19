@@ -6,9 +6,13 @@ import Inkproof.Gpu
 
 open Inkproof.Gpu
 
+def frameSize (n : Nat) (shape : Nat → Inkproof.Scene.Shape) : Nat :=
+  let list : Inkproof.Scene.DisplayList := (Array.range n).map fun i =>
+    ⟨i % 3, ⟨0, 0, 0, 255⟩, shape i⟩
+  (frameBytes 1920 600 list ⟨255, 255, 255, 255⟩).size
+
 def main : IO UInt32 := do
-  let list : Inkproof.Scene.DisplayList := (Array.range 40000).map fun (i : Nat) =>
-    ⟨0, ⟨0, 0, 0, 255⟩, .marker .circle ⟨((i : Nat) : Int), 0⟩ 2⟩
-  let bytes := frameBytes 1920 600 list ⟨255, 255, 255, 255⟩
-  IO.println s!"frame bytes {bytes.size}"
+  let markers := frameSize 100000 fun i => .marker .circle ⟨(i : Int), 0⟩ 2
+  let rects := frameSize 100000 fun i => .rect ⟨i, 0, i + 1, 1⟩
+  IO.println s!"frame bytes {markers} {rects}"
   return 0
