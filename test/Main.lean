@@ -100,5 +100,10 @@ def main (args : List String) : IO UInt32 :=
           [.scissor [7, 7, 7, 7], .scissor []] &&
         ops.filter (fun | .uniform 2 _ => true | _ => false) ==
           [.uniform 2 [0x3F800000, 0, 0, 0x3F800000], .uniform 2 [0, 0, 0, 0]]) "wrong state"⟩,
+    ⟨"a frame of 40000 commands encodes",
+      let list : Inkproof.Scene.DisplayList := (Array.range 40000).map fun (i : Nat) =>
+        ⟨0, ⟨0, 0, 0, 255⟩, .marker .circle ⟨((i : Nat) : Int), 0⟩ 2⟩
+      let bytes := frameBytes 1920 600 list ⟨255, 255, 255, 255⟩
+      check (bytes.size > 0 && (bytes.data.toList.take 4 == le32 (4 + 7 * 40000))) "wrong frame"⟩,
     ⟨"unknown opcode is rejected", check (decode (encode [⟨200, []⟩]) == none) "accepted"⟩
   ]

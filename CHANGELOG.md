@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.7.1]
+
+- Compiling a frame runs in constant stack in the number of commands, so a display list of 40000 commands encodes in the browser.
+
 ## [0.7.0]
 
 - Adds `frameBytes`, the wire bytes of a fresh frame of a display list in one call.

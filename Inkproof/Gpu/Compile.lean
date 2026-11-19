@@ -112,6 +112,55 @@ def deletes : Nat → Nat → List Op
   | _, 0 => []
   | h, n + 1 => .delete h :: deletes (h + 1) n
 
+private def itemsOfTR (h : Nat) (cs : List (List UInt32 × State)) : List Item :=
+  (cs.foldl (fun (a : Nat × Array Item) (w, u) => (a.1 + 1, a.2.push ⟨a.1, w, u⟩)) (h, #[])).2.toList
+
+private theorem itemsOfTR_go (cs : List (List UInt32 × State)) (h : Nat) (acc : Array Item) :
+    (cs.foldl (fun (a : Nat × Array Item) (w, u) => (a.1 + 1, a.2.push ⟨a.1, w, u⟩)) (h, acc)).2.toList =
+      acc.toList ++ itemsOf h cs := by
+  induction cs generalizing h acc with
+  | nil => simp [itemsOf]
+  | cons c cs ih => simp [itemsOf, ih]
+
+/-- Constant stack, which the browser needs for long display lists. -/
+@[csimp] private theorem itemsOf_eq_itemsOfTR : @itemsOf = @itemsOfTR := by
+  funext h cs
+  simp [itemsOfTR, itemsOfTR_go]
+
+private def uploadsTR (h : Nat) (ws : List (List UInt32)) : List Op :=
+  (ws.foldl (fun (a : Nat × Array Op) w => (a.1 + 1, (a.2.push (.create a.1)).push (.upload a.1 w)))
+    (h, #[])).2.toList
+
+private theorem uploadsTR_go (ws : List (List UInt32)) (h : Nat) (acc : Array Op) :
+    (ws.foldl (fun (a : Nat × Array Op) w => (a.1 + 1, (a.2.push (.create a.1)).push (.upload a.1 w)))
+      (h, acc)).2.toList = acc.toList ++ uploads h ws := by
+  induction ws generalizing h acc with
+  | nil => simp [uploads]
+  | cons w ws ih => simp [uploads, ih]
+
+@[csimp] private theorem uploads_eq_uploadsTR : @uploads = @uploadsTR := by
+  funext h ws
+  simp [uploadsTR, uploadsTR_go]
+
+private def deletesTR (h n : Nat) : List Op :=
+  (List.range n).map fun i => .delete (h + i)
+
+private theorem deletesTR_eq (n h : Nat) : (List.range n).map (fun i => Op.delete (h + i)) = deletes h n := by
+  induction n generalizing h with
+  | zero => simp [deletes]
+  | succ n ih =>
+    rw [List.range_succ_eq_map, List.map_cons, List.map_map]
+    simp only [deletes]
+    congr 1
+    rw [← ih (h + 1)]
+    apply List.map_congr_left
+    intro i _
+    simp [Function.comp, Nat.add_assoc, Nat.add_comm 1 i]
+
+@[csimp] private theorem deletes_eq_deletesTR : @deletes = @deletesTR := by
+  funext h n
+  simp [deletesTR, deletesTR_eq]
+
 structure Stage where
   cache : Cache
   ops : List Op

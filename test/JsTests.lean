@@ -85,6 +85,45 @@ console.log(JSON.stringify(px));"
   IO.eprint out.stderr
   return out.exitCode == 0 && out.stdout.trimAscii.toString == expected
 
+/-- Builds `Browser.lean` for the browser and runs it in headless Chromium, where the stack is far shallower than under node. -/
+def encodesInBrowser (dir : System.FilePath) : IO Bool := do
+  let out := dir / "browser"
+  if ← out.pathExists then IO.FS.removeDirAll out
+  let build ← IO.Process.output
+    { cmd := "node_modules/.bin/lasm"
+      args := #["build", "Browser.lean", "--target", "browser", "--dev", "--output", out.toString]
+      env := #[("LASM_EDITOR", some "0")] }
+  if build.exitCode != 0 then
+    IO.eprint build.stderr
+    return false
+  let script := s!"import \{ chromium } from \"playwright\";
+import \{ createServer } from \"node:http\";
+import \{ readFileSync } from \"node:fs\";
+import \{ extname, join } from \"node:path\";
+const types = \{ \".js\": \"text/javascript\", \".html\": \"text/html\", \".wasm\": \"application/wasm\" };
+const server = createServer((q, r) => \{
+  try \{
+    const p = join(\"{out}\", q.url === \"/\" ? \"index.html\" : q.url.split(\"?\")[0]);
+    r.setHeader(\"content-type\", types[extname(p)] ?? \"application/octet-stream\");
+    r.end(readFileSync(p));
+  } catch \{ r.statusCode = 404; r.end(); }
+}).listen(0);
+const browser = await chromium.launch();
+const page = await browser.newPage();
+const lines = [];
+page.on(\"console\", m => lines.push(m.text()));
+page.on(\"pageerror\", e => lines.push(e.message));
+await page.goto(`http://localhost:$\{server.address().port}/`);
+const deadline = Date.now() + 60000;
+while (Date.now() < deadline && !lines.some(l => l.startsWith(\"frame bytes\") || l.includes(\"stopped\")))
+  await page.waitForTimeout(200);
+await browser.close();
+server.close();
+console.log(lines.find(l => l.startsWith(\"frame bytes\")) ?? lines.join(\"; \"));"
+  let r ← IO.Process.output { cmd := "node", args := #["--input-type=module", "-e", script] }
+  IO.eprint r.stderr
+  return r.exitCode == 0 && r.stdout.trimAscii.toString.startsWith "frame bytes"
+
 def main : IO UInt32 := do
   let dir : System.FilePath := "/tmp/inkproof-gpu-test"
   IO.FS.createDirAll dir
@@ -95,6 +134,8 @@ def main : IO UInt32 := do
     return ← fail "scissor excludes the centre"
   if !(← drawsTriangle dir (scissored triangle [4, 4, 8, 8]) "{\"px\":[255,0,0,255],\"err\":0,\"released\":true}") then
     return ← fail "scissor keeps the centre"
+  if !(← encodesInBrowser dir) then
+    return ← fail "a frame of 40000 commands under Lasm in headless Chromium"
   for (name, text) in [("gpu.js", js), ("vertex.glsl", vertexShader.glsl),
       ("fragment.glsl", fragmentShader.glsl)] do
     if (← IO.FS.readFile s!"../generated/{name}") != text then
