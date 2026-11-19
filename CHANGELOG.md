@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.2]
+
+- Adds `releaseState` to the generated interpreter, which deletes the buffers and programs a state holds.
+
 ## [0.6.1]
 
 - Expresses `chainTriangles` through Scene's `Item.fold` (Scene v0.9.0), removing the private traversal.

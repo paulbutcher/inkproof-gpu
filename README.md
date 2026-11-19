@@ -5,7 +5,7 @@ GPU command lists for Inkproof charts: the command set and its binary encoding, 
 ## What it does
 
 - Describe the GPU command set, backend-neutrally, and encode and decode command lists to a binary buffer: `specs`, `Cmd`, `Op`, `encode`, `decode`.
-- Run a command list on WebGL2 in the browser: the generated JavaScript decoder and interpreter in `generated/gpu.js`, printed by `js` (regenerate with `lake exe gen generated`).
+- Run a command list on WebGL2 in the browser: the generated JavaScript decoder and interpreter in `generated/gpu.js`, printed by `js` (regenerate with `lake exe gen generated`). Free what a run left on the GL context with `releaseState(gl, state)`.
 - Model what a command list does to buffers, uniforms and draws, to state theorems about it: `Gpu`, `Gpu.run`, `Gpu.step`.
 - Turn a view's tiles of Scene display-list commands into GPU ops, caching vertex buffers by content so pan and zoom upload nothing: `compile`, `compileCmds`, `Cache`, `Tile`, `frameDraws`.
 - Tessellate Scene commands (rectangles, text boxes, markers, strips, areas, envelopes) into triangles, and into Float32 vertex words relative to a tile origin: `triangles`, `tessellate`, `triWords`, `vertexWords`.

@@ -68,10 +68,16 @@ const src = readFileSync(\"{dir / "gpu.mjs"}\", \"utf8\");
 const px = await page.evaluate(async (\{ src, bytes }) => \{
   const gpu = await import(URL.createObjectURL(new Blob([src], \{ type: \"text/javascript\" })));
   const gl = document.getElementById(\"c\").getContext(\"webgl2\", \{ preserveDrawingBuffer: true });
-  gpu.run(gl, gpu.newState(), new Uint8Array(bytes));
+  const state = gpu.newState();
+  gpu.run(gl, state, new Uint8Array(bytes));
   const out = new Uint8Array(4);
   gl.readPixels(8, 8, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, out);
-  return \{ px: Array.from(out), err: gl.getError() };
+  const bufs = Array.from(state.buffers.values());
+  const progs = Array.from(state.programs.values(), p => p.program);
+  gpu.releaseState(gl, state);
+  const alive = bufs.filter(o => gl.isBuffer(o)).length + progs.filter(o => gl.isProgram(o)).length;
+  const empty = state.buffers.size + state.programs.size === 0;
+  return \{ px: Array.from(out), err: gl.getError(), released: bufs.length > 0 && progs.length > 0 && alive === 0 && empty };
 }, \{ src, bytes: [{bytes}] });
 await browser.close();
 console.log(JSON.stringify(px));"
@@ -83,11 +89,11 @@ def main : IO UInt32 := do
   let dir : System.FilePath := "/tmp/inkproof-gpu-test"
   IO.FS.createDirAll dir
   if !(← jsDecodes dir sample) then return ← fail "generated JavaScript decoder"
-  if !(← drawsTriangle dir triangle "{\"px\":[255,0,0,255],\"err\":0}") then
+  if !(← drawsTriangle dir triangle "{\"px\":[255,0,0,255],\"err\":0,\"released\":true}") then
     return ← fail "triangle drawn in headless Chromium"
-  if !(← drawsTriangle dir (scissored triangle [0, 0, 4, 4]) "{\"px\":[0,0,0,255],\"err\":0}") then
+  if !(← drawsTriangle dir (scissored triangle [0, 0, 4, 4]) "{\"px\":[0,0,0,255],\"err\":0,\"released\":true}") then
     return ← fail "scissor excludes the centre"
-  if !(← drawsTriangle dir (scissored triangle [4, 4, 8, 8]) "{\"px\":[255,0,0,255],\"err\":0}") then
+  if !(← drawsTriangle dir (scissored triangle [4, 4, 8, 8]) "{\"px\":[255,0,0,255],\"err\":0,\"released\":true}") then
     return ← fail "scissor keeps the centre"
   for (name, text) in [("gpu.js", js), ("vertex.glsl", vertexShader.glsl),
       ("fragment.glsl", fragmentShader.glsl)] do
