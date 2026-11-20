@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.11.0]
+
+- Adds `viewOverlayFrame`: a data list under a view plus a pixel-space overlay in one compile, with each list's buffers kept across frames and views.
+
 ## [0.10.0]
 
 - Adds `tessellateStroke`: under `viewFrame`, a strip's half width and a marker's radius are in pixels whatever the view, with no new upload per view.
