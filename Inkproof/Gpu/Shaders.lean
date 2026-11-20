@@ -29,7 +29,7 @@ def vertexShader : Shader where
     (.bin .add (sc 1 "p") (sm (sc 1 "o") (sc 3 "u_view"))) (.lit 0) (.lit 1)),
     ("v_pos", sv "a_position")]
 
-/-- Fills with a colour that varies piecewise linearly along an axis. `v_pos` is the position the vertex was given, relative to the tile origin, interpolated across the triangle. `t` is its coordinate along the axis `u_axis` (a unit vector along x or y). `u_colour` is the colour at the first stop, and segment `i` adds `u_delta<i>`, the change of colour across it, scaled by how far `t` is across the segment: `u_start` holds the segments' start coordinates and `u_inv` the reciprocals of their lengths. A flat colour has zero deltas. -/
+/-- Fills with a colour that varies piecewise linearly along an axis. `v_pos` is the position the vertex was given, relative to the tile origin, interpolated across the triangle. `t` is its coordinate along the axis `u_axis` (a unit vector along x or y). `u_colour` is the colour at the first stop, and segment `i` adds `u_delta<i>`, the change of colour across it, scaled by how far `t` is across the segment: `u_start` holds the segments' start coordinates and `u_inv` the reciprocals of their lengths. A flat colour has zero deltas. The output is the colour with its red, green and blue multiplied by its alpha, the premultiplied form that source-over blending and a premultiplied canvas both define. -/
 def fragmentShader : Shader where
   ins := [⟨"v_pos", 2⟩]
   uniforms := [⟨"u_colour", 4⟩, ⟨"u_axis", 2⟩, ⟨"u_start", 4⟩, ⟨"u_inv", 4⟩,
@@ -37,11 +37,12 @@ def fragmentShader : Shader where
   outs := [⟨"o_colour", 4⟩]
   decls :=
     ⟨"t", 1, .bin .add (sm (sc 0 "v_pos") (sc 0 "u_axis")) (sm (sc 1 "v_pos") (sc 1 "u_axis"))⟩ ::
-    (List.finRange 4).map fun i =>
-      ⟨s!"w{i.val}", 1, .sat (sm (.bin .sub (sv "t") (sc i "u_start")) (sc i "u_inv"))⟩
-  assigns := [("o_colour",
-    .bin .add (.bin .add (.bin .add (.bin .add (sv "u_colour") (sm (sv "u_delta0") (sv "w0")))
-      (sm (sv "u_delta1") (sv "w1"))) (sm (sv "u_delta2") (sv "w2"))) (sm (sv "u_delta3") (sv "w3")))]
+    ((List.finRange 4).map fun i =>
+      ⟨s!"w{i.val}", 1, .sat (sm (.bin .sub (sv "t") (sc i "u_start")) (sc i "u_inv"))⟩) ++
+    [⟨"c", 4, .bin .add (.bin .add (.bin .add (.bin .add (sv "u_colour") (sm (sv "u_delta0") (sv "w0")))
+      (sm (sv "u_delta1") (sv "w1"))) (sm (sv "u_delta2") (sv "w2"))) (sm (sv "u_delta3") (sv "w3"))⟩]
+  assigns := [("o_colour", .vec4 (sm (sc 0 "c") (sc 3 "c")) (sm (sc 1 "c") (sc 3 "c"))
+    (sm (sc 2 "c") (sc 3 "c")) (sc 3 "c"))]
 
 theorem vertexShader_wellTyped : vertexShader.WellTyped := by decide
 

@@ -484,4 +484,4 @@ def Inkproof.Gpu.webglBody : String → List String
 theorem Inkproof.Gpu.webglBody_createBuffer : Inkproof.Gpu.webglBody "createBuffer" = ["s.buffers.set(a[0], gl.createBuffer());"]
 theorem Inkproof.Gpu.webglBody_createProgram : Inkproof.Gpu.webglBody "createProgram" = ["s.programs.set(a[0], buildProgram(gl));"]
 theorem Inkproof.Gpu.webglBody_unknown : ∀ (n : String), ¬n ∈ ["createBuffer", "bufferData", "deleteBuffer", "useProgram", "uniform", "draw", "clear", "createProgram", "scissor"] → Inkproof.Gpu.webglBody n = []
-theorem Inkproof.Gpu.webglBody_useProgram : Inkproof.Gpu.webglBody "useProgram" = ["s.current = s.programs.get(a[0]);", "gl.useProgram(s.current.program);"]
+theorem Inkproof.Gpu.webglBody_useProgram : Inkproof.Gpu.webglBody "useProgram" = ["s.current = s.programs.get(a[0]);", "gl.useProgram(s.current.program);", "gl.enable(gl.BLEND);", "gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);"]

@@ -16,6 +16,7 @@ GPU command lists for Inkproof charts: the command set and its binary encoding, 
 - Draw a zooming chart's axes and gridlines in pixels beside its data in one frame: `viewOverlayFrame` (and `viewOverlayFrameBytes`) takes the data list and an overlay list in device pixels; `viewOverlayFrame_cached` and `viewOverlayFrame_data_cached` state that zooming uploads nothing for the data.
 - Draw strips and markers of a zooming chart at a constant size in pixels, with no new upload per view: `viewFrame` with `tessellateStroke` (which `viewFrameBytes` uses) takes a strip's half width and a marker's radius in pixels; `viewFrame_stroke_cached` states that nothing is uploaded under another view.
 - Write shaders in a small Float32 language, evaluate them, and print GLSL ES 3.00: `Shader.Shader`, `Shader.Shader.run`, `Shader.Shader.glsl`, `Shader.Shader.WellTyped`. A reciprocal square root is `Shader.Expr.rsqrt` and a clamp to 0 to 1 is `Shader.Expr.sat`.
+- Draw translucent commands: the fragment shader outputs colour premultiplied by alpha and `useProgram` enables source-over blending, so overlapping translucent shapes mix and opaque ones draw as before.
 - Get the renderer's shaders and their uniform names: `vertexShader`, `fragmentShader`, `uniformNames` (printed to `generated/vertex.glsl` and `generated/fragment.glsl`).
 - Rely on proofs that tessellation covers what Scene's raster model draws, that decoding inverts encoding, and that vertex placement is within half a pixel: see `Inkproof/Gpu/Proofs/`.
 

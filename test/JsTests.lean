@@ -159,6 +159,25 @@ def matchesModel (list : Inkproof.Scene.DisplayList) (w tol : Nat) (px : Array N
     (if got ≥ want then got - want else want - got) ≤ tol
 
 open Inkproof.Scene in
+/-- Two translucent rectangles that overlap in the middle columns of a 12 by 2 target. -/
+def translucentList : DisplayList :=
+  #[⟨0, .flat ⟨255, 0, 0, 128⟩, .rect ⟨0, 0, 8, 2⟩⟩, ⟨1, .flat ⟨0, 0, 255, 128⟩, .rect ⟨4, 0, 12, 2⟩⟩]
+
+/-- Source-over of straight colour `c` with alpha `a` (0 to 255) on the opaque channel value `d`. -/
+def overChannel (c a d : Nat) : Nat := (c * a + d * (255 - a) + 127) / 255
+
+/-- Whether each pixel of the render is the translucent rectangles source-over white, to 2 in 255. -/
+def mixesTranslucent (px : Array Nat) : Bool :=
+  (List.range 12).all fun col =>
+    let layers : List (Nat × Nat × Nat) :=
+      (if col < 8 then [(255, 0, 0)] else []) ++ (if col ≥ 4 then [(0, 0, 255)] else [])
+    let want := layers.foldl (fun (r, g, b) (cr, cg, cb) =>
+      (overChannel cr 128 r, overChannel cg 128 g, overChannel cb 128 b)) (255, 255, 255)
+    let near (x y : Nat) := (if x ≥ y then x - y else y - x) ≤ 2
+    near px[col * 4]! want.1 && near px[col * 4 + 1]! want.2.1 && near px[col * 4 + 2]! want.2.2 &&
+      px[col * 4 + 3]! == 255
+
+open Inkproof.Scene in
 /-- An area on a 16 by 16 target whose series runs from (0, 2) to (16, 14) across its baseline `y = 8`. -/
 def crossingList : DisplayList :=
   #[⟨0, .flat ⟨255, 0, 0, 255⟩, .area 8 [.val ⟨0, 2⟩, .val ⟨16, 14⟩]⟩]
@@ -230,6 +249,11 @@ def main : IO UInt32 := do
     if !matchesModel gradientList 32 1 px then
       return ← fail "gradient fills match the raster model to 1 in 255 in headless Chromium"
   | none => return ← fail "gradient frame rendered in headless Chromium"
+  match ← renders dir 12 2 translucentList with
+  | some px =>
+    if !mixesTranslucent px then
+      return ← fail "overlapping translucent fills mix by source-over in headless Chromium"
+  | none => return ← fail "translucent frame rendered in headless Chromium"
   match ← renders dir 16 16 crossingList with
   | some px =>
     if !fillsBetween px then

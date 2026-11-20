@@ -1,10 +1,14 @@
 # Changelog
 
+## [0.13.0]
+
+- Strips from `tessellateStroke` have round joins and caps, so no square corners protrude at vertices.
+- Adds `areaTriangles`: an area whose line crosses its baseline is split at the crossing and filled only between line and baseline.
+- Premultiplies the fragment colour and blends source-over, so overlapping translucent fills mix; `useProgram` enables blending.
+
 ## [0.12.0]
 
 - Draws gradient shadings, along x or y with up to five stops, for fills and strokes: `shadingColour` is replaced by `shadingState`, `Tile` has an `origin`, `State` has the gradient uniforms (numbers 5 to 11), and the fragment shader and `Shader.Expr.sat` are new.
-- Strips from `tessellateStroke` have round joins and caps, so no square corners protrude at vertices.
-- Adds `areaTriangles`: an area whose line crosses its baseline is split at the crossing and filled only between line and baseline.
 
 ## [0.11.0]
 

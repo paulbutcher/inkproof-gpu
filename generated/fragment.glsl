@@ -19,5 +19,6 @@ void main() {
   float w1 = clamp(((t - u_start.y) * u_inv.y), 0.0, 1.0);
   float w2 = clamp(((t - u_start.z) * u_inv.z), 0.0, 1.0);
   float w3 = clamp(((t - u_start.w) * u_inv.w), 0.0, 1.0);
-  o_colour = ((((u_colour + (u_delta0 * w0)) + (u_delta1 * w1)) + (u_delta2 * w2)) + (u_delta3 * w3));
+  vec4 c = ((((u_colour + (u_delta0 * w0)) + (u_delta1 * w1)) + (u_delta2 * w2)) + (u_delta3 * w3));
+  o_colour = vec4((c.x * c.w), (c.y * c.w), (c.z * c.w), c.w);
 }

@@ -35,19 +35,21 @@ def attributeLines : List String :=
   (attributeDefaults.mapIdx fun i d =>
     s!"if (n <= {i + 1}) \{ gl.disableVertexAttribArray({i + 1}); gl.vertexAttrib2f({i + 1}, {d.1}, {d.2}); }")
 
-/-- The WebGL2 realisation of each command, over `gl`, the context, and `s`, the interpreter state. `createProgram` builds the renderer's program, and `uniform` takes the number of a uniform of that program; `draw` reads each vertex as the number of words its third operand gives, two floats for each attribute of the vertex shader in order, with the defaults of `attributeDefaults` for any it has no words for, and `scissor` takes four 32-bit integers (x, y, width, height from the bottom left) or none to draw unrestricted. -/
+/-- The WebGL2 realisation of each command, over `gl`, the context, and `s`, the interpreter state. `createProgram` builds the renderer's program, and `uniform` takes the number of a uniform of that program; `draw` reads each vertex as the number of words its third operand gives, two floats for each attribute of the vertex shader in order, with the defaults of `attributeDefaults` for any it has no words for, and `useProgram` also enables source-over blending of premultiplied colours, and `clear` premultiplies its colour; `scissor` takes four 32-bit integers (x, y, width, height from the bottom left) or none to draw unrestricted. -/
 def webglBody : String → List String
   | "createBuffer" => ["s.buffers.set(a[0], gl.createBuffer());"]
   | "bufferData" => ["gl.bindBuffer(gl.ARRAY_BUFFER, s.buffers.get(a[0]));",
       "gl.bufferData(gl.ARRAY_BUFFER, a[1], gl.STATIC_DRAW);"]
   | "deleteBuffer" => ["gl.deleteBuffer(s.buffers.get(a[0]));", "s.buffers.delete(a[0]);"]
-  | "useProgram" => ["s.current = s.programs.get(a[0]);", "gl.useProgram(s.current.program);"]
+  | "useProgram" => ["s.current = s.programs.get(a[0]);", "gl.useProgram(s.current.program);",
+      "gl.enable(gl.BLEND);", "gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);"]
   | "uniform" => ["const w = new Float32Array(a[1].buffer);",
       "gl[\"uniform\" + w.length + \"fv\"](s.current.uniforms[a[0]], w);"]
   | "draw" => ["gl.bindBuffer(gl.ARRAY_BUFFER, s.buffers.get(a[0]));"] ++ attributeLines ++
       ["gl.drawArrays(gl.TRIANGLES, 0, a[1]);"]
-  | "clear" => ["gl.clearColor((a[0] >>> 24) / 255, ((a[0] >>> 16) & 255) / 255,",
-      "  ((a[0] >>> 8) & 255) / 255, (a[0] & 255) / 255);", "gl.clear(gl.COLOR_BUFFER_BIT);"]
+  | "clear" => ["const ca = (a[0] & 255) / 255;",
+      "gl.clearColor((a[0] >>> 24) / 255 * ca, ((a[0] >>> 16) & 255) / 255 * ca,",
+      "  ((a[0] >>> 8) & 255) / 255 * ca, ca);", "gl.clear(gl.COLOR_BUFFER_BIT);"]
   | "createProgram" => ["s.programs.set(a[0], buildProgram(gl));"]
   | "scissor" => ["const w = new Int32Array(a[0].buffer);",
       "if (w.length === 4) { gl.enable(gl.SCISSOR_TEST); gl.scissor(w[0], w[1], w[2], w[3]); }",
@@ -58,7 +60,8 @@ theorem webglBody_createBuffer :
     webglBody "createBuffer" = ["s.buffers.set(a[0], gl.createBuffer());"] := rfl
 
 theorem webglBody_useProgram :
-    webglBody "useProgram" = ["s.current = s.programs.get(a[0]);", "gl.useProgram(s.current.program);"] := rfl
+    webglBody "useProgram" = ["s.current = s.programs.get(a[0]);", "gl.useProgram(s.current.program);",
+      "gl.enable(gl.BLEND);", "gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);"] := rfl
 
 theorem webglBody_createProgram :
     webglBody "createProgram" = ["s.programs.set(a[0], buildProgram(gl));"] := rfl
