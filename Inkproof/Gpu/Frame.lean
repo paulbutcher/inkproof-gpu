@@ -111,9 +111,25 @@ def viewFrame (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) 
   let r := compileCmds tess c [viewTile w h v plot list]
   (r.1, frameSetup fresh bg ++ r.2)
 
+/-- A tile of a display list in device pixels whose vertices are `tessellateStroke`'s, so that it can be compiled beside a `viewTile` and its strips and markers are sized in pixels as theirs are. -/
+def pixelStrokeTile (w h : Nat) (list : Scene.DisplayList) : Tile :=
+  { pixelTile w h list with stride := 6, size := strokeSizeWords }
+
+/-- The commands of one frame of `list`, in data coordinates, under `v`, and `overlay`, in device pixels from the top left, such as axes and gridlines, on a `w` by `h` target cleared to `bg`. Both are compiled together, so zooming uploads nothing for `list`. -/
+def viewOverlayFrame (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) (w h : Nat)
+    (v : View) (plot : Scene.Rect) (list overlay : Scene.DisplayList) (bg : Scene.Color) :
+    Cache × List Cmd :=
+  let r := compileCmds tess c [viewTile w h v plot list, pixelStrokeTile w h overlay]
+  (r.1, frameSetup fresh bg ++ r.2)
+
 /-- The wire bytes of a fresh frame of `list`, in data coordinates, under `v`, with strips and markers sized in pixels. -/
 def viewFrameBytes (w h : Nat) (v : View) (plot : Scene.Rect) (list : Scene.DisplayList)
     (bg : Scene.Color) : ByteArray :=
   ⟨(encode (viewFrame (tessellateStroke ⟨0, 0⟩) {} true w h v plot list bg).2).toArray⟩
+
+/-- The wire bytes of a fresh frame of `list` under `v` and `overlay` in device pixels, with strips and markers of both sized in pixels. -/
+def viewOverlayFrameBytes (w h : Nat) (v : View) (plot : Scene.Rect)
+    (list overlay : Scene.DisplayList) (bg : Scene.Color) : ByteArray :=
+  ⟨(encode (viewOverlayFrame (tessellateStroke ⟨0, 0⟩) {} true w h v plot list overlay bg).2).toArray⟩
 
 end Inkproof.Gpu

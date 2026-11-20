@@ -229,5 +229,28 @@ def main (args : List String) : IO UInt32 :=
       let (c, _) := viewFrame ts {} true 500 400 (strokeViews.getD 0 ⟨0, 1, 0, 1⟩) strokePlot strokeList ⟨255, 255, 255, 255⟩
       check (strokeViews.all fun v =>
         !uploadsCmd (viewFrame ts c false 500 400 v strokePlot strokeList ⟨255, 255, 255, 255⟩).2) "uploaded"⟩,
+    ⟨"zooming a frame with an overlay uploads nothing new for the data",
+      let ts := Inkproof.Gpu.tessellateStroke ⟨0, 0⟩
+      let white : Inkproof.Scene.Color := ⟨255, 255, 255, 255⟩
+      let axes : Inkproof.Scene.DisplayList :=
+        #[⟨0, .flat ⟨0, 0, 0, 255⟩, .strip 1 [.val ⟨40, 330⟩, .val ⟨440, 330⟩]⟩]
+      let (c, _) := viewOverlayFrame ts {} true 500 400 (strokeViews.getD 0 ⟨0, 1, 0, 1⟩) strokePlot strokeList axes white
+      check (strokeViews.all fun v =>
+        !uploadsCmd (viewOverlayFrame ts c false 500 400 v strokePlot strokeList axes white).2) "uploaded"⟩,
+    ⟨"an overlay is drawn in pixels with stroke vertices",
+      let ts := Inkproof.Gpu.tessellateStroke ⟨0, 0⟩
+      let axes : Inkproof.Scene.DisplayList :=
+        #[⟨0, .flat ⟨0, 0, 0, 255⟩, .strip 1 [.val ⟨40, 330⟩, .val ⟨440, 330⟩]⟩]
+      let ops := (compile ts {} [viewTile 500 400 (strokeViews.getD 0 ⟨0, 1, 0, 1⟩) strokePlot strokeList,
+        pixelStrokeTile 500 400 axes]).2
+      let ux := ops.filterMap fun | .uniform 0 ws => some ws | _ => none
+      let uo := ops.filterMap fun | .uniform 1 ws => some ws | _ => none
+      let ur := ops.filterMap fun | .draw _ _ k => some k | _ => none
+      match ux.getLast?, uo.getLast?, ur.getLast? with
+      | some [sx, sy], some [ox, oy], some 6 =>
+        let px := ((ratToFloat32 40) * Float32.ofBits sx + Float32.ofBits ox).toFloat
+        let py := ((ratToFloat32 330) * Float32.ofBits sy + Float32.ofBits oy).toFloat
+        check ((((px + 1) / 2 * 500) - 40).abs ≤ 0.5 && (((1 - py) / 2 * 400) - 330).abs ≤ 0.5) "off"
+      | _, _, _ => check false "no stroke draw"⟩,
     ⟨"unknown opcode is rejected", check (decode (encode [⟨200, []⟩]) == none) "accepted"⟩
   ]

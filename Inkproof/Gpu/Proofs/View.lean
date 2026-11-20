@@ -146,4 +146,119 @@ theorem viewFrame_stroke_cached (c : Cache) (w h : Nat) (v : View) (plot : Scene
       [viewTile w' h' v' plot' list]).2, ¬ o.IsUpload :=
   viewFrame_cached _ (tessellateStroke_clipped _) c w h v plot list w' h' v' plot'
 
+theorem viewOverlayFrame_eq (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) (w h : Nat)
+    (v : View) (plot : Scene.Rect) (list overlay : Scene.DisplayList) (bg : Scene.Color) :
+    viewOverlayFrame tess c fresh w h v plot list overlay bg =
+      ((compile tess c [viewTile w h v plot list, pixelStrokeTile w h overlay]).1,
+        frameSetup fresh bg ++
+          (compile tess c [viewTile w h v plot list, pixelStrokeTile w h overlay]).2.map Op.toCmd) := rfl
+
+theorem viewOverlayFrameBytes_eq (w h : Nat) (v : View) (plot : Scene.Rect)
+    (list overlay : Scene.DisplayList) (bg : Scene.Color) :
+    viewOverlayFrameBytes w h v plot list overlay bg =
+      ⟨(encode (viewOverlayFrame (tessellateStroke ⟨0, 0⟩) {} true w h v plot list overlay bg).2).toArray⟩ := rfl
+
+theorem pixelStrokeTile_stride (w h : Nat) (l : Scene.DisplayList) :
+    (pixelStrokeTile w h l).stride = 6 := rfl
+
+theorem pixelStrokeTile_size (w h : Nat) (l : Scene.DisplayList) :
+    (pixelStrokeTile w h l).size = strokeSizeWords := rfl
+
+/-- The overlay tile is the pixel tile of its list with stroke vertices: only the stride and the size differ. -/
+theorem pixelStrokeTile_eq (w h : Nat) (l : Scene.DisplayList) :
+    pixelStrokeTile w h l = { pixelTile w h l with stride := 6, size := strokeSizeWords } := rfl
+
+theorem pixelStrokeTile_cmds (tess : Scene.Command → List UInt32) (w h : Nat)
+    (l : Scene.DisplayList) : (pixelStrokeTile w h l).cmds tess = l.paintOrder.map tess := rfl
+
+private theorem overlay_data_cached (tess : Scene.Command → List UInt32)
+    (htess : ∀ (c : Scene.Command) (r : Scene.Rect), tess { c with shape := .clipped r c.shape } = tess c)
+    (c : Cache) (w h : Nat) (v : View) (plot : Scene.Rect) (list overlay : Scene.DisplayList)
+    (w' h' : Nat) (v' : View) (plot' : Scene.Rect) :
+    (viewTile w' h' v' plot' list).Cached tess
+      (compile tess c [viewTile w h v plot list, pixelStrokeTile w h overlay]).1 := by
+  have := compile_cache_cached tess c [viewTile w h v plot list, pixelStrokeTile w h overlay]
+    (viewTile w h v plot list) (by simp)
+  rw [Tile.Cached, viewTile_cmds tess htess, ← viewTile_cmds tess htess w h v plot list]
+  exact this
+
+/-- After a frame of a list and an overlay, a frame of the same list and overlay under any other view creates and uploads nothing. -/
+theorem viewOverlayFrame_cached (tess : Scene.Command → List UInt32)
+    (htess : ∀ (c : Scene.Command) (r : Scene.Rect), tess { c with shape := .clipped r c.shape } = tess c)
+    (c : Cache) (w h : Nat) (v : View) (plot : Scene.Rect) (list overlay : Scene.DisplayList)
+    (w' h' : Nat) (v' : View) (plot' : Scene.Rect) :
+    ∀ o ∈ (compile tess (compile tess c [viewTile w h v plot list, pixelStrokeTile w h overlay]).1
+      [viewTile w' h' v' plot' list, pixelStrokeTile w' h' overlay]).2, ¬ o.IsUpload := by
+  refine compile_cached tess _ _ fun t ht => ?_
+  rcases List.mem_cons.mp ht with rfl | ht
+  · exact overlay_data_cached tess htess c w h v plot list overlay _ _ _ _
+  · obtain rfl := List.mem_singleton.mp ht
+    have := compile_cache_cached tess c [viewTile w h v plot list, pixelStrokeTile w h overlay]
+      (pixelStrokeTile w h overlay) (by simp)
+    simpa [Tile.Cached, pixelStrokeTile_cmds] using this
+
+private theorem deletes_not_upload (b n : Nat) : ∀ o ∈ deletes b n, ¬ o.IsUpload := by
+  induction n generalizing b with
+  | zero => simp [deletes]
+  | succ n ih =>
+    intro o ho
+    simp only [deletes, List.mem_cons] at ho
+    rcases ho with rfl | ho
+    · simp [Op.IsUpload]
+    · exact ih _ o ho
+
+private theorem compile_cached_head (tess : Scene.Command → List UInt32) (c' : Cache) (d a : Tile)
+    (hd : d.Cached tess c') :
+    ∀ o ∈ (compile tess c' [d, a]).2, o.IsUpload → ∃ b, o ∈ uploads b (a.cmds tess) := by
+  obtain ⟨e, he, hw⟩ := hd
+  intro o ho hu
+  let s0 : Stage := ⟨{ c' with entries := c'.entries.filter (fun e =>
+      [d, a].any (fun t => decide (e.words = t.cmds tess))) },
+    (c'.entries.filter (fun e => !([d, a].any (fun t => decide (e.words = t.cmds tess))))).flatMap
+      (fun e => deletes e.base e.words.length), []⟩
+  have hs0 : s0 = ⟨{ c' with entries := c'.entries.filter (fun e =>
+      [d, a].any (fun t => decide (e.words = t.cmds tess))) },
+    (c'.entries.filter (fun e => !([d, a].any (fun t => decide (e.words = t.cmds tess))))).flatMap
+      (fun e => deletes e.base e.words.length), []⟩ := rfl
+  have hfind : ∃ e', s0.cache.entries.find? (fun e => decide (e.words = d.cmds tess)) = some e' := by
+    have : (s0.cache.entries.find? fun e => decide (e.words = d.cmds tess)).isSome := by
+      rw [List.find?_isSome]
+      exact ⟨e, by simp [hs0, he, hw], by simpa using hw⟩
+    exact Option.isSome_iff_exists.mp this
+  obtain ⟨e', he'⟩ := hfind
+  have h1 : stageTile tess s0 d = { s0 with items := s0.items ++ itemsOf e'.base (d.items tess) } := by
+    simp [stageTile, he']
+  have hops : ∀ o ∈ s0.ops, ¬ o.IsUpload := by
+    intro o ho
+    simp only [hs0, List.mem_flatMap] at ho
+    obtain ⟨e, _, ho⟩ := ho
+    exact deletes_not_upload _ _ o ho
+  have h2 : ∀ x ∈ (stageTile tess (stageTile tess s0 d) a).ops, x.IsUpload → ∃ b, x ∈ uploads b (a.cmds tess) := by
+    intro x hx hxu
+    rw [h1] at hx
+    unfold stageTile at hx
+    dsimp only at hx
+    split at hx
+    · exact absurd hxu (hops x hx)
+    · simp only [List.mem_append] at hx
+      rcases hx with hx | hx
+      · exact absurd hxu (hops x hx)
+      · exact ⟨_, hx⟩
+  simp only [compile, List.foldl_cons, List.foldl_nil, List.mem_append, List.mem_flatMap] at ho
+  rcases ho with ho | ⟨i, _, ho⟩
+  · exact h2 o ho hu
+  · simp only [Item.ops, List.mem_cons, List.not_mem_nil, or_false] at ho
+    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> simp [Op.IsUpload] at hu
+
+
+/-- A frame of the same list under another view, with any overlay, uploads only buffers of the overlay's vertices: the list's are not uploaded again. -/
+theorem viewOverlayFrame_data_cached (tess : Scene.Command → List UInt32)
+    (htess : ∀ (c : Scene.Command) (r : Scene.Rect), tess { c with shape := .clipped r c.shape } = tess c)
+    (c : Cache) (w h : Nat) (v : View) (plot : Scene.Rect) (list overlay : Scene.DisplayList)
+    (w' h' : Nat) (v' : View) (plot' : Scene.Rect) (overlay' : Scene.DisplayList) :
+    ∀ o ∈ (compile tess (compile tess c [viewTile w h v plot list, pixelStrokeTile w h overlay]).1
+      [viewTile w' h' v' plot' list, pixelStrokeTile w' h' overlay']).2,
+      o.IsUpload → ∃ b, o ∈ uploads b (overlay'.paintOrder.map tess) :=
+  compile_cached_head tess _ _ _ (overlay_data_cached tess htess c w h v plot list overlay w' h' v' plot')
+
 end Inkproof.Gpu
