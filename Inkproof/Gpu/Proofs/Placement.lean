@@ -46,15 +46,18 @@ theorem placed_mul_add (v : Rat) (hv : 0 < v) (x s c : Float32) (t : Rat)
   rw [Rat.div_def, Rat.one_mul]
   grind
 
-/-- The vertex shader places each vertex within half a pixel of its exact position, for a viewport `v` pixels across, given the hypotheses of `Placeable` for each coordinate. -/
+/-- The vertex shader places the centre of each vertex within half a pixel of its exact position, for a viewport `v` pixels across, given the hypotheses of `Placeable` for each coordinate. What it adds to the centre, the stroke offset, is the part that is not bounded here: it is zero for a vertex whose corner is zero. -/
 theorem vertexShader_placement (v : Rat) (hv : 0 < v) (env : String → Option (List Float32))
-    (x y a b c d : Float32) (tx ty : Rat)
-    (hp : env "a_position" = some [x, y]) (hs : env "u_slope" = some [a, b])
-    (ho : env "u_offset" = some [c, d])
+    (x y dx dy kx ky a b c d z w0 w1 w2 w3 : Float32) (tx ty : Rat)
+    (hp : env "a_position" = some [x, y]) (hd : env "a_dir" = some [dx, dy])
+    (hk : env "a_corner" = some [kx, ky]) (hs : env "u_slope" = some [a, b])
+    (ho : env "u_offset" = some [c, d]) (hz : env "u_size" = some [z])
+    (hw : env "u_view" = some [w0, w1, w2, w3])
     (hx : Placeable v x a c tx) (hy : Placeable v y b d ty) :
-    ∃ X Y : Float32, vertexShader.run env = some [("gl_Position", [X, Y, 0, 1])] ∧
-      Placed v X tx ∧ Placed v Y ty :=
-  ⟨x * a + c, y * b + d, vertexShader_run env x y a b c d hp hs ho,
+    ∃ ex ey : Float32,
+      vertexShader.run env = some [("gl_Position", [x * a + c + ex, y * b + d + ey, 0, 1])] ∧
+      Placed v (x * a + c) tx ∧ Placed v (y * b + d) ty :=
+  ⟨_, _, vertexShader_run env x y dx dy kx ky a b c d z w0 w1 w2 w3 hp hd hk hs ho hz hw,
     placed_mul_add v hv x a c tx hx, placed_mul_add v hv y b d ty hy⟩
 
 end Inkproof.Gpu

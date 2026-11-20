@@ -17,6 +17,62 @@ theorem vertexWords_eq (origin p : Pt) :
     vertexWords origin p =
       [(ratToFloat32 (p.x - origin.x)).toBits, (ratToFloat32 (p.y - origin.y)).toBits] := rfl
 
+/-- A stroke vertex's words are the bits of its position relative to the origin, its direction and its corner, each coordinate rounded to Float32. -/
+theorem Vtx.words_eq (origin : Pt) (v : Vtx) :
+    v.words origin =
+      [(ratToFloat32 (v.pos.x - origin.x)).toBits, (ratToFloat32 (v.pos.y - origin.y)).toBits,
+       (ratToFloat32 v.dir.x).toBits, (ratToFloat32 v.dir.y).toBits,
+       (ratToFloat32 v.kx).toBits, (ratToFloat32 v.ky).toBits] := rfl
+
+/-- A command's stroke words are those of its stroke vertices, in order. -/
+theorem tessellateStroke_eq (origin : Pt) (c : Command) :
+    tessellateStroke origin c = (strokeVertices c.shape).flatMap (Vtx.words origin) := rfl
+
+/-- A command's stroke words are six per vertex. -/
+theorem tessellateStroke_length (origin : Pt) (c : Command) :
+    (tessellateStroke origin c).length = 6 * (strokeVertices c.shape).length := by
+  unfold tessellateStroke
+  generalize strokeVertices c.shape = vs
+  induction vs with
+  | nil => rfl
+  | cons v vs ih => simp only [List.flatMap_cons, List.length_append, ih, List.length_cons]; show 6 + _ = _; grind
+
+/-- The size of a strip or marker is its half width or radius; of any other shape, zero. -/
+theorem strokeSize_strip (hw : Rat) (items : List (Item Pt)) : strokeSize (.strip hw items) = hw := rfl
+
+theorem strokeSize_marker (k : MarkerShape) (c : Pt) (r : Rat) : strokeSize (.marker k c r) = r := rfl
+
+theorem strokeSize_rect (b : Rect) : strokeSize (.rect b) = 0 := rfl
+
+theorem strokeSize_clipped (b : Rect) (s : Shape) : strokeSize (.clipped b s) = strokeSize s := rfl
+
+theorem strokeSizeWords_eq (s : Shape) :
+    strokeSizeWords s = [(ratToFloat32 (strokeSize s)).toBits] := rfl
+
+/-- A segment, a square marker and a circle marker have 6, 6 and 24 vertices. -/
+theorem segVertices_length (a b : Pt) : (segVertices a b).length = 6 := rfl
+
+theorem Vtx.plain_eq (p : Pt) : Vtx.plain p = ⟨p, ⟨1, 0⟩, 0, 0⟩ := rfl
+
+theorem squareVertices_eq (c : Pt) :
+    squareVertices c =
+      [⟨c, ⟨1, 0⟩, -1, -1⟩, ⟨c, ⟨1, 0⟩, 1, -1⟩, ⟨c, ⟨1, 0⟩, -1, 1⟩,
+       ⟨c, ⟨1, 0⟩, 1, 1⟩, ⟨c, ⟨1, 0⟩, -1, 1⟩, ⟨c, ⟨1, 0⟩, 1, -1⟩] := rfl
+
+/-- The octagon is a fan of eight triangles from the centre over the ring of its corners. -/
+theorem octagonVertices_eq (c : Pt) :
+    octagonVertices c =
+      let k : Rat := 4143 / 10000
+      let v : List (Rat × Rat) :=
+        [(1, -k), (1, k), (k, 1), (-k, 1), (-1, k), (-1, -k), (-k, -1), (k, -1)]
+      let ring := v ++ v.take 1
+      (ring.zip (ring.drop 1)).flatMap fun (a, b) =>
+        [⟨c, ⟨1, 0⟩, 0, 0⟩, ⟨c, ⟨1, 0⟩, a.1, a.2⟩, ⟨c, ⟨1, 0⟩, b.1, b.2⟩] := rfl
+
+theorem squareVertices_length (c : Pt) : (squareVertices c).length = 6 := rfl
+
+theorem octagonVertices_length (c : Pt) : (octagonVertices c).length = 24 := rfl
+
 /-- A command's words are those of its triangles, in order. -/
 theorem tessellate_eq (origin : Pt) (c : Command) :
     tessellate origin c = ((triangles c.shape).map (triWords origin)).flatten := rfl
@@ -154,5 +210,33 @@ theorem covers_triangles {c : Command} (hp : Polygonal c.shape) {px : Pixel} (h 
   obtain ⟨p, hr, hc⟩ := h
   obtain ⟨t, ht, htr⟩ := region_sub_triangles c.shape hp p hr
   exact ⟨t, ht, p, htr, hc⟩
+
+/-- The stroke vertices of a clipped shape are those of what it clips. -/
+theorem strokeVertices_clipped (b : Rect) (s : Shape) : strokeVertices (.clipped b s) = strokeVertices s := rfl
+
+theorem strokeVertices_strip (hw : Rat) (items : List (Item Pt)) :
+    strokeVertices (.strip hw items) = stripVertices items := rfl
+
+theorem strokeVertices_square (c : Pt) (r : Rat) :
+    strokeVertices (.marker .square c r) = squareVertices c := rfl
+
+theorem strokeVertices_circle (c : Pt) (r : Rat) :
+    strokeVertices (.marker .circle c r) = octagonVertices c := rfl
+
+/-- A segment is the two triangles of the rectangle about it: four corners at its ends, each end twice or once. -/
+theorem segVertices_eq (a b : Pt) :
+    segVertices a b = [⟨a, a.dir b, -1, -1⟩, ⟨b, a.dir b, 1, -1⟩, ⟨a, a.dir b, -1, 1⟩,
+      ⟨b, a.dir b, 1, 1⟩, ⟨a, a.dir b, -1, 1⟩, ⟨b, a.dir b, 1, -1⟩] := rfl
+
+theorem stripVertices_nil : stripVertices [] = [] := rfl
+
+theorem stripVertices_gap (rest : List (Item Pt)) : stripVertices (.gap :: rest) = stripVertices rest := rfl
+
+theorem stripVertices_val_last (a : Pt) :
+    stripVertices [.val a] = segVertices a a := by simp [stripVertices]
+
+theorem stripVertices_val_val (a b : Pt) (rest : List (Item Pt)) :
+    stripVertices (.val a :: .val b :: rest) =
+      segVertices a a ++ segVertices a b ++ stripVertices (.val b :: rest) := rfl
 
 end Inkproof.Gpu

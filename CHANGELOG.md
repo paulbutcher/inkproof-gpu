@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0]
+
+- Adds `tessellateStroke`: under `viewFrame`, a strip's half width and a marker's radius are in pixels whatever the view, with no new upload per view.
+- `draw` takes a third operand, the vertex stride in words.
+- The vertex shader has inputs `a_dir` and `a_corner` and uniforms `u_size` and `u_view`.
+- Colour is now uniform 4.
+
 ## [0.9.0]
 
 - Adds `viewFrame` and `viewTile`, a frame of a display list in data coordinates under a view, so zooming reuses uploaded buffers.

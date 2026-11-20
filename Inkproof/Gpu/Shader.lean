@@ -11,7 +11,7 @@ inductive Op where
   | mul
   deriving DecidableEq, Repr
 
-/-- Float32 expressions over scalars and vectors; a vector is its list of components. Operators are componentwise, and a scalar operand is broadcast. Nothing here names a graphics API. -/
+/-- Float32 expressions over scalars and vectors; a vector is its list of components. Operators are componentwise, and a scalar operand is broadcast. `rsqrt` is the reciprocal square root of a scalar. Nothing here names a graphics API. -/
 inductive Expr where
   | var (name : String)
   | lit (n : Nat)
@@ -19,6 +19,7 @@ inductive Expr where
   | vec2 (a b : Expr)
   | vec4 (a b c d : Expr)
   | comp (i : Fin 4) (e : Expr)
+  | rsqrt (e : Expr)
   deriving Repr
 
 def Op.apply : Op → Float32 → Float32 → Float32
@@ -56,6 +57,9 @@ def Expr.eval (env : String → Option (List Float32)) : Expr → Option (List F
     match v[i.val]? with
     | some x => some [x]
     | none => none
+  | .rsqrt e => do
+    let x ← scalar (← e.eval env)
+    some [1 / x.sqrt]
 
 def broadcastDim (m n : Nat) : Option Nat :=
   if m = 1 then some n else if n = 1 then some m else if m = n then some m else none
@@ -72,6 +76,8 @@ def Expr.dim (env : String → Option Nat) : Expr → Option Nat
     then some 4 else none
   | .comp i e => do
     if i.val < (← e.dim env) then some 1 else none
+  | .rsqrt e => do
+    if (← e.dim env) = 1 then some 1 else none
 
 def Op.glsl : Op → String
   | .add => "+"
@@ -92,6 +98,7 @@ def Expr.glsl : Expr → String
   | .vec2 a b => s!"vec2({a.glsl}, {b.glsl})"
   | .vec4 a b c d => s!"vec4({a.glsl}, {b.glsl}, {c.glsl}, {d.glsl})"
   | .comp i e => s!"{e.glsl}.{componentName i}"
+  | .rsqrt e => s!"inversesqrt({e.glsl})"
 
 theorem Expr.glsl_var (n : String) : (Expr.var n).glsl = n := rfl
 
@@ -108,6 +115,8 @@ theorem Expr.glsl_vec4 (a b c d : Expr) :
 
 theorem Expr.glsl_comp (i : Fin 4) (e : Expr) :
     (Expr.comp i e).glsl = s!"{e.glsl}.{componentName i}" := rfl
+
+theorem Expr.glsl_rsqrt (e : Expr) : (Expr.rsqrt e).glsl = s!"inversesqrt({e.glsl})" := rfl
 
 theorem Op.glsl_add : Op.add.glsl = "+" := rfl
 
@@ -145,6 +154,11 @@ theorem Expr.eval_comp (env : String → Option (List Float32)) (i : Fin 4) (e :
       | some x => some [x]
       | none => none) := rfl
 
+theorem Expr.eval_rsqrt (env : String → Option (List Float32)) (e : Expr) :
+    (Expr.rsqrt e).eval env = (do
+      let x ← scalar (← e.eval env)
+      some [1 / x.sqrt]) := rfl
+
 theorem Op.lift_scalar_left (op : Op) (x : Float32) (ys : List Float32) :
     op.lift [x] ys = some (ys.map (op.apply x)) := by
   simp [Op.lift]
@@ -180,6 +194,10 @@ theorem Expr.dim_vec4 (env : String → Option Nat) (a b c d : Expr) :
     (Expr.vec4 a b c d).dim env = (do
       if (← a.dim env) = 1 ∧ (← b.dim env) = 1 ∧ (← c.dim env) = 1 ∧ (← d.dim env) = 1
       then some 4 else none) := rfl
+
+theorem Expr.dim_rsqrt (env : String → Option Nat) (e : Expr) :
+    (Expr.rsqrt e).dim env = (do
+      if (← e.dim env) = 1 then some 1 else none) := rfl
 
 theorem Expr.dim_comp (env : String → Option Nat) (i : Fin 4) (e : Expr) :
     (Expr.comp i e).dim env = (do

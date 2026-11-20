@@ -13,7 +13,7 @@ def sample : List Cmd := [
   ⟨1, [.u32 7, .words [1, 2, 0xFFFFFFFF]]⟩,
   ⟨4, [.u32 0, .words []]⟩,
   ⟨8, [.words [1, 2, 3, 4]]⟩,
-  ⟨5, [.u32 7, .u32 3]⟩,
+  ⟨5, [.u32 7, .u32 3, .u32 2]⟩,
   ⟨6, [.u32 0x11223344]⟩
 ]
 
@@ -50,14 +50,15 @@ def shapes : List Shape :=
    .text ⟨0, 0, 3, 3⟩ "a", .clipped ⟨0, 0, 1, 1⟩ (.rect ⟨0, 0, 4, 4⟩)]
 
 def tiles (u : UInt32) : List Tile :=
-  [⟨#[cmd 2 0, cmd 0 1], [u], [0], fun _ => []⟩, ⟨#[cmd 1 2], [u + 1], [0], fun _ => []⟩]
+  [⟨#[cmd 2 0, cmd 0 1], [u], [0], [], 2, fun _ => [0], fun _ => []⟩,
+   ⟨#[cmd 1 2], [u + 1], [0], [], 2, fun _ => [0], fun _ => []⟩]
 
 def isUpload : Op → Bool
   | .create _ | .upload _ _ => true
   | _ => false
 
 def drawHandles (ops : List Op) : List Nat :=
-  ops.filterMap fun | .draw h _ => some h | _ => none
+  ops.filterMap fun | .draw h _ _ => some h | _ => none
 
 def uploadsCmd (cmds : List Cmd) : Bool := cmds.any fun c => c.op == 0 || c.op == 1
 
@@ -70,6 +71,84 @@ def zoomPlot : Inkproof.Scene.Rect := ⟨50, 20, 450, 320⟩
 def zoomViews : List View := [⟨5, 35, 15, 45⟩, ⟨8, 20, 18, 38⟩, ⟨-1000, 1000, -1000, 1000⟩]
 
 def ratToFloat (q : Rat) : Float := Float.ofInt q.num / Float.ofNat q.den
+
+open Inkproof.Scene in
+/-- A strip over x 1 to 7 and y 40 to 80 of half width half a pixel, and a marker of radius 3 pixels of each kind. -/
+def strokeList : DisplayList :=
+  #[⟨0, .flat ⟨0, 0, 0, 255⟩, .strip (1 / 2) [.val ⟨1, 40⟩, .val ⟨3, 80⟩, .val ⟨5, 50⟩, .gap, .val ⟨7, 60⟩]⟩,
+    ⟨1, .flat ⟨0, 0, 0, 255⟩, .marker .circle ⟨4, 55⟩ 3⟩,
+    ⟨2, .flat ⟨0, 0, 0, 255⟩, .marker .square ⟨2, 70⟩ 3⟩]
+
+def strokePlot : Inkproof.Scene.Rect := ⟨40, 30, 440, 330⟩
+
+def strokeViews : List View := [⟨0, 8, 30, 90⟩, ⟨1, 3, 40, 80⟩, ⟨-20, 30, 0, 200⟩]
+
+def toFloat32s (ws : List UInt32) : List Float32 := ws.map Float32.ofBits
+
+def chunks6 : List UInt32 → List (List UInt32)
+  | a :: b :: c :: d :: e :: f :: rest => [a, b, c, d, e, f] :: chunks6 rest
+  | _ => []
+
+/-- Where the vertex shader puts each vertex of `words`, in pixels from the top left of a `w` by `h` target. -/
+def shaderPixels (w h : Nat) (st : State) (words : List UInt32) : List (Float × Float) :=
+  (chunks6 words).filterMap fun v =>
+    let env : String → Option (List Float32) := fun n =>
+      if n == "a_position" then some (toFloat32s (v.take 2))
+      else if n == "a_dir" then some (toFloat32s ((v.drop 2).take 2))
+      else if n == "a_corner" then some (toFloat32s (v.drop 4))
+      else if n == "u_slope" then some (toFloat32s st.slope)
+      else if n == "u_offset" then some (toFloat32s st.offset)
+      else if n == "u_size" then some (toFloat32s st.size)
+      else if n == "u_view" then some (toFloat32s st.view)
+      else none
+    match vertexShader.run env with
+    | some [(_, [x, y, _, _])] =>
+      some ((x.toFloat + 1) / 2 * w.toFloat, (1 - y.toFloat) / 2 * h.toFloat)
+    | _ => none
+
+/-- The corners of the rectangle of half width `hw` about the segment from `a` to `b` in pixels, with square caps, computed exactly. -/
+def segCorners (hw : Float) (a b : Float × Float) : List (Float × Float) :=
+  let dx := b.1 - a.1
+  let dy := b.2 - a.2
+  let len := Float.sqrt (dx * dx + dy * dy)
+  let (tx, ty) := if len == 0 then (1.0, 0.0) else (dx / len, dy / len)
+  [(a.1 - hw * tx - hw * ty, a.2 - hw * ty + hw * tx), (a.1 - hw * tx + hw * ty, a.2 - hw * ty - hw * tx),
+   (b.1 + hw * tx - hw * ty, b.2 + hw * ty + hw * tx), (b.1 + hw * tx + hw * ty, b.2 + hw * ty - hw * tx)]
+
+open Inkproof.Scene in
+/-- The corners of a strip's segments, as in the strip's triangles. -/
+def stripCorners (hw : Float) : List (Item (Float × Float)) → List (Float × Float)
+  | [] => []
+  | .gap :: rest => stripCorners hw rest
+  | .val a :: rest =>
+    segCorners hw a a ++
+      (match rest with
+        | .val b :: _ => segCorners hw a b
+        | _ => []) ++ stripCorners hw rest
+
+open Inkproof.Scene in
+/-- The corners of the shape in pixels under the view: those of a strip are exact, and the others are the corners of the triangles. -/
+def pixelCorners (v : View) (plot : Rect) : Shape → List (Float × Float)
+  | .strip hw items => stripCorners (ratToFloat hw) (items.map fun
+      | .val p => .val (ratToFloat ((viewX v plot).apply p.x), ratToFloat ((viewY v plot).apply p.y))
+      | .gap => .gap)
+  | .marker k c r =>
+    (Inkproof.Gpu.triangles (.marker k ⟨(viewX v plot).apply c.x, (viewY v plot).apply c.y⟩ r)).flatMap fun t =>
+      [t.a, t.b, t.c].map fun p => (ratToFloat p.x, ratToFloat p.y)
+  | _ => []
+
+/-- Whether every point is within half a pixel of one of the others. -/
+def within (ps qs : List (Float × Float)) : Bool :=
+  ps.all fun p => qs.any fun q => (p.1 - q.1).abs ≤ 0.5 && (p.2 - q.2).abs ≤ 0.5
+
+open Inkproof.Scene in
+/-- The vertices of the shader's triangles agree to half a pixel with the corners of the shapes in pixels. A strip is exact, where Scene's triangles for a strip are a little wider. -/
+def strokeAgrees (w h : Nat) (v : View) : Bool :=
+  let tile := viewTile w h v strokePlot strokeList
+  tile.list.paintOrder.all fun c =>
+    let got := shaderPixels w h (tile.stateOf c) (tessellateStroke ⟨0, 0⟩ c)
+    let want := pixelCorners v strokePlot (match c.shape with | .clipped _ s => s | s => s)
+    !got.isEmpty && within got want && within want got
 
 def main (args : List String) : IO UInt32 :=
   runTests [
@@ -89,7 +168,7 @@ def main (args : List String) : IO UInt32 :=
       check (!ops.any isUpload && drawHandles ops == [0, 1, 2]) "uploaded again"⟩,
     ⟨"changed tile content is uploaded and the stale buffers deleted",
       let (c, _) := compile tess {} (tiles 0)
-      let (_, ops) := compile tess c [⟨#[cmd 3 9], [0], [0], fun _ => []⟩]
+      let (_, ops) := compile tess c [⟨#[cmd 3 9], [0], [0], [], 2, fun _ => [0], fun _ => []⟩]
       check (ops.any isUpload && ops.any (fun | .delete _ => true | _ => false)) "no re-upload"⟩,
     ⟨"compiled frame survives the wire",
       let (_, cmds) := compileCmds tess {} (tiles 0)
@@ -106,22 +185,22 @@ def main (args : List String) : IO UInt32 :=
         (Inkproof.Gpu.triangles (.marker .circle ⟨3, -2⟩ 10)).any (inTri · p)) "point outside"⟩,
     ⟨"each draw is set up with its colour and scissor",
       let t : Tile := ⟨#[⟨0, .flat ⟨255, 0, 0, 255⟩, .clipped ⟨0, 0, 1, 1⟩ (.rect ⟨0, 0, 4, 4⟩)⟩,
-        ⟨1, .flat ⟨0, 0, 0, 0⟩, .rect ⟨0, 0, 1, 1⟩⟩], [0], [0], fun _ => [7, 7, 7, 7]⟩
+        ⟨1, .flat ⟨0, 0, 0, 0⟩, .rect ⟨0, 0, 1, 1⟩⟩], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7]⟩
       let (_, ops) := compile tess {} [t]
       check (ops.filter (fun | .scissor _ => true | _ => false) ==
           [.scissor [7, 7, 7, 7], .scissor []] &&
-        ops.filter (fun | .uniform 2 _ => true | _ => false) ==
-          [.uniform 2 [0x3F800000, 0, 0, 0x3F800000], .uniform 2 [0, 0, 0, 0]]) "wrong state"⟩,
+        ops.filter (fun | .uniform 4 _ => true | _ => false) ==
+          [.uniform 4 [0x3F800000, 0, 0, 0x3F800000], .uniform 4 [0, 0, 0, 0]]) "wrong state"⟩,
     ⟨"a gradient command is drawn with an empty scissor",
       let g : Inkproof.Scene.Command := ⟨0, .gradient .x ⟨0, ⟨255, 0, 0, 255⟩⟩ [], .rect ⟨0, 0, 1, 1⟩⟩
-      let t : Tile := ⟨#[g], [0], [0], fun _ => [7, 7, 7, 7]⟩
+      let t : Tile := ⟨#[g], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7]⟩
       let (_, ops) := compile tess {} [t]
       check (ops.contains (.scissor [0, 0, 0, 0]) && !ops.contains (.scissor [7, 7, 7, 7])) "drawn"⟩,
     ⟨"a frame of 40000 commands encodes",
       let list : Inkproof.Scene.DisplayList := (Array.range 40000).map fun (i : Nat) =>
         ⟨0, .flat ⟨0, 0, 0, 255⟩, .marker .circle ⟨((i : Nat) : Int), 0⟩ 2⟩
       let bytes := frameBytes 1920 600 list ⟨255, 255, 255, 255⟩
-      check (bytes.size > 0 && (bytes.data.toList.take 4 == le32 (4 + 7 * 40000))) "wrong frame"⟩,
+      check (bytes.size > 0 && (bytes.data.toList.take 4 == le32 (4 + 9 * 40000))) "wrong frame"⟩,
     ⟨"zooming a frame uploads nothing",
       let (c, _) := viewFrame (tessellate ⟨0, 0⟩) {} true 500 400 (zoomViews.getD 0 ⟨0, 1, 0, 1⟩) zoomPlot zoomList ⟨255, 255, 255, 255⟩
       check (zoomViews.all fun v =>
@@ -143,5 +222,12 @@ def main (args : List String) : IO UInt32 :=
               (px - ratToFloat ((viewX v zoomPlot).apply p.x)).abs ≤ 0.5 &&
                 (py - ratToFloat ((viewY v zoomPlot).apply p.y)).abs ≤ 0.5
           | _, _ => false) "off by more than half a pixel"⟩,
+    ⟨"strokes keep their size in pixels under views with different scales",
+      check (strokeViews.all (strokeAgrees 500 400)) "off by more than half a pixel"⟩,
+    ⟨"zooming strokes uploads nothing",
+      let ts := Inkproof.Gpu.tessellateStroke ⟨0, 0⟩
+      let (c, _) := viewFrame ts {} true 500 400 (strokeViews.getD 0 ⟨0, 1, 0, 1⟩) strokePlot strokeList ⟨255, 255, 255, 255⟩
+      check (strokeViews.all fun v =>
+        !uploadsCmd (viewFrame ts c false 500 400 v strokePlot strokeList ⟨255, 255, 255, 255⟩).2) "uploaded"⟩,
     ⟨"unknown opcode is rejected", check (decode (encode [⟨200, []⟩]) == none) "accepted"⟩
   ]

@@ -15,6 +15,11 @@ def pixelX (w : Nat) : Scale.Affine Rat := ⟨2 / w, -1⟩
 /-- The map from pixel rows of a `h` pixel high target, counted down from the top, to clip y, before rounding to Float32. -/
 def pixelY (h : Nat) : Scale.Affine Rat := ⟨-2 / h, 1⟩
 
+/-- The view uniform of a `w` by `h` target: half its width and height, then their reciprocals doubled, which is the factor from clip space to pixels and back. -/
+def viewWords (w h : Nat) : List UInt32 :=
+  [(ratToFloat32 (w / 2)).toBits, (ratToFloat32 (h / 2)).toBits,
+   (ratToFloat32 (2 / w)).toBits, (ratToFloat32 (2 / h)).toBits]
+
 /-- The box (x, y, width, height) in device pixels from the bottom left that covers every pixel of a `w` by `h` target meeting `r`, a rectangle in pixels from the top left. -/
 def pixelBox (w h : Nat) (r : Scene.Rect) : Nat × Nat × Nat × Nat :=
   let xl := max 0 r.x0.floor
@@ -33,6 +38,9 @@ def pixelTile (w h : Nat) (list : Scene.DisplayList) : Tile where
   list := list
   slope := [(ratToFloat32 (pixelX w).slope).toBits, (ratToFloat32 (pixelY h).slope).toBits]
   offset := [(ratToFloat32 (pixelX w).offset).toBits, (ratToFloat32 (pixelY h).offset).toBits]
+  view := viewWords w h
+  stride := 2
+  size := fun _ => [0]
   scissor := pixelScissor w h
 
 /-- A colour packed as red, green, blue and alpha from the most significant byte, the operand of `clear`. -/
@@ -84,13 +92,16 @@ def viewScissor (w h : Nat) (v : View) (plot : Scene.Rect) (r : Scene.Rect) : Li
 def View.clip (v : View) (list : Scene.DisplayList) : Scene.DisplayList :=
   list.map fun c => { c with shape := .clipped ⟨v.x0, v.y0, v.x1, v.y1⟩ c.shape }
 
-/-- A tile of a display list in data coordinates, drawn so that the view fills `plot`, a rectangle in pixels from the top left of a `w` by `h` target. Only the uniforms and scissors depend on the view, so the vertex words are those of the list itself. -/
+/-- A tile of a display list in data coordinates, drawn so that the view fills `plot`, a rectangle in pixels from the top left of a `w` by `h` target. Only the uniforms and scissors depend on the view, so the vertex words are those of the list itself. The half width of a strip and the radius of a marker are in pixels, whatever the view: the vertex words must be `tessellateStroke`'s. -/
 def viewTile (w h : Nat) (v : View) (plot : Scene.Rect) (list : Scene.DisplayList) : Tile where
   list := v.clip list
   slope := [(ratToFloat32 ((pixelX w).comp (viewX v plot)).slope).toBits,
     (ratToFloat32 ((pixelY h).comp (viewY v plot)).slope).toBits]
   offset := [(ratToFloat32 ((pixelX w).comp (viewX v plot)).offset).toBits,
     (ratToFloat32 ((pixelY h).comp (viewY v plot)).offset).toBits]
+  view := viewWords w h
+  stride := 6
+  size := strokeSizeWords
   scissor := viewScissor w h v plot
 
 /-- The commands of one frame of `list`, in data coordinates, under `v` on a `w` by `h` target cleared to `bg`. A later frame of the same list under another view uploads nothing. -/
@@ -100,9 +111,9 @@ def viewFrame (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) 
   let r := compileCmds tess c [viewTile w h v plot list]
   (r.1, frameSetup fresh bg ++ r.2)
 
-/-- The wire bytes of a fresh frame of `list`, in data coordinates, under `v`. -/
+/-- The wire bytes of a fresh frame of `list`, in data coordinates, under `v`, with strips and markers sized in pixels. -/
 def viewFrameBytes (w h : Nat) (v : View) (plot : Scene.Rect) (list : Scene.DisplayList)
     (bg : Scene.Color) : ByteArray :=
-  ⟨(encode (viewFrame (tessellate ⟨0, 0⟩) {} true w h v plot list bg).2).toArray⟩
+  ⟨(encode (viewFrame (tessellateStroke ⟨0, 0⟩) {} true w h v plot list bg).2).toArray⟩
 
 end Inkproof.Gpu

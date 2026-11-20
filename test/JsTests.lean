@@ -10,7 +10,7 @@ def sample : List Cmd := [
   ⟨0, [.u32 7]⟩,
   ⟨1, [.u32 7, .words [1, 2, 0xFFFFFFFF]]⟩,
   ⟨4, [.u32 0, .words []]⟩,
-  ⟨5, [.u32 7, .u32 3]⟩,
+  ⟨5, [.u32 7, .u32 3, .u32 2]⟩,
   ⟨6, [.u32 0x11223344]⟩
 ]
 
@@ -37,19 +37,30 @@ console.log(JSON.stringify(cmds.map(c => [c.op, c.args.map(a => typeof a === \"n
 
 def one : UInt32 := 0x3F800000
 def minusOne : UInt32 := 0xBF800000
+def eight : UInt32 := 0x41000000
+def eighth : UInt32 := 0x3E000000
 
-/-- Creates the program, uploads a triangle covering the centre, sets the uniforms and draws it. -/
-def triangle : List Cmd := [
+/-- Creates the program, uploads a triangle covering the centre as `words`, sets the uniforms and draws it with vertices of `stride` words. -/
+def triangleOf (words : List UInt32) (stride : UInt32) : List Cmd := [
   ⟨6, [.u32 0x000000FF]⟩,
   ⟨7, [.u32 1]⟩,
   ⟨0, [.u32 2]⟩,
-  ⟨1, [.u32 2, .words [minusOne, minusOne, one, minusOne, 0, one]]⟩,
+  ⟨1, [.u32 2, .words words]⟩,
   ⟨3, [.u32 1]⟩,
   ⟨4, [.u32 0, .words [one, one]]⟩,
   ⟨4, [.u32 1, .words [0, 0]]⟩,
-  ⟨4, [.u32 2, .words [one, 0, 0, one]]⟩,
-  ⟨5, [.u32 2, .u32 3]⟩
+  ⟨4, [.u32 2, .words [0]]⟩,
+  ⟨4, [.u32 3, .words [eight, eight, eighth, eighth]]⟩,
+  ⟨4, [.u32 4, .words [one, 0, 0, one]]⟩,
+  ⟨5, [.u32 2, .u32 3, .u32 stride]⟩
 ]
+
+/-- A triangle of bare positions, so that the direction and the corner take their defaults. -/
+def triangle : List Cmd := triangleOf [minusOne, minusOne, one, minusOne, 0, one] 2
+
+/-- The same triangle with a direction and a zero corner on every vertex. -/
+def triangle6 : List Cmd :=
+  triangleOf [minusOne, minusOne, one, 0, 0, 0, one, minusOne, one, 0, 0, 0, 0, one, one, 0, 0, 0] 6
 
 /-- The commands with a scissor, given as words, set just before the draw. -/
 def scissored (cs : List Cmd) (ws : List Int) : List Cmd :=
@@ -130,6 +141,8 @@ def main : IO UInt32 := do
   if !(← jsDecodes dir sample) then return ← fail "generated JavaScript decoder"
   if !(← drawsTriangle dir triangle "{\"px\":[255,0,0,255],\"err\":0,\"released\":true}") then
     return ← fail "triangle drawn in headless Chromium"
+  if !(← drawsTriangle dir triangle6 "{\"px\":[255,0,0,255],\"err\":0,\"released\":true}") then
+    return ← fail "triangle of positions, directions and corners drawn in headless Chromium"
   if !(← drawsTriangle dir (scissored triangle [0, 0, 4, 4]) "{\"px\":[0,0,0,255],\"err\":0,\"released\":true}") then
     return ← fail "scissor excludes the centre"
   if !(← drawsTriangle dir (scissored triangle [4, 4, 8, 8]) "{\"px\":[255,0,0,255],\"err\":0,\"released\":true}") then

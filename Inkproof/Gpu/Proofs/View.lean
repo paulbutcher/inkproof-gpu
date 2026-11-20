@@ -88,6 +88,20 @@ theorem tessellate_clipped (origin : Scene.Pt) (c : Scene.Command) (r : Scene.Re
     tessellate origin { c with shape := .clipped r c.shape } = tessellate origin c := by
   simp [tessellate, triangles]
 
+/-- A clipped shape has the stroke vertices of what it clips. -/
+theorem tessellateStroke_clipped (origin : Scene.Pt) (c : Scene.Command) (r : Scene.Rect) :
+    tessellateStroke origin { c with shape := .clipped r c.shape } = tessellateStroke origin c := by
+  simp [tessellateStroke, strokeVertices]
+
+theorem viewTile_view (w h : Nat) (v : View) (plot : Scene.Rect) (l : Scene.DisplayList) :
+    (viewTile w h v plot l).view = viewWords w h := rfl
+
+theorem viewTile_stride (w h : Nat) (v : View) (plot : Scene.Rect) (l : Scene.DisplayList) :
+    (viewTile w h v plot l).stride = 6 := rfl
+
+theorem viewTile_size (w h : Nat) (v : View) (plot : Scene.Rect) (l : Scene.DisplayList) :
+    (viewTile w h v plot l).size = strokeSizeWords := rfl
+
 /-- Clipping to a view reorders nothing, so a tessellator that ignores clips sees the same commands in the same order whatever the view. -/
 theorem viewTile_cmds (tess : Scene.Command → List UInt32)
     (htess : ∀ (c : Scene.Command) (r : Scene.Rect), tess { c with shape := .clipped r c.shape } = tess c)
@@ -109,7 +123,7 @@ theorem viewFrame_eq (tess : Scene.Command → List UInt32) (c : Cache) (fresh :
 theorem viewFrameBytes_eq (w h : Nat) (v : View) (plot : Scene.Rect) (list : Scene.DisplayList)
     (bg : Scene.Color) :
     viewFrameBytes w h v plot list bg =
-      ⟨(encode (viewFrame (tessellate ⟨0, 0⟩) {} true w h v plot list bg).2).toArray⟩ := rfl
+      ⟨(encode (viewFrame (tessellateStroke ⟨0, 0⟩) {} true w h v plot list bg).2).toArray⟩ := rfl
 
 /-- After a frame of a list under one view, a frame of the same list under any other view creates and uploads nothing, whatever the targets and plots: it only sets uniforms, draws and deletes buffers it does not need. -/
 theorem viewFrame_cached (tess : Scene.Command → List UInt32)
@@ -123,5 +137,13 @@ theorem viewFrame_cached (tess : Scene.Command → List UInt32)
   have := compile_cache_cached tess c [viewTile w h v plot list] _ (List.mem_singleton.mpr rfl)
   rw [Tile.Cached, viewTile_cmds tess htess, ← viewTile_cmds tess htess w h v plot list]
   exact this
+
+/-- A frame of strips and markers sized in pixels, under another view, uploads nothing: their vertices are the same whatever the view, and only the transform and the view uniform change. -/
+theorem viewFrame_stroke_cached (c : Cache) (w h : Nat) (v : View) (plot : Scene.Rect)
+    (list : Scene.DisplayList) (w' h' : Nat) (v' : View) (plot' : Scene.Rect) :
+    ∀ o ∈ (compile (tessellateStroke ⟨0, 0⟩)
+      (compile (tessellateStroke ⟨0, 0⟩) c [viewTile w h v plot list]).1
+      [viewTile w' h' v' plot' list]).2, ¬ o.IsUpload :=
+  viewFrame_cached _ (tessellateStroke_clipped _) c w h v plot list w' h' v' plot'
 
 end Inkproof.Gpu

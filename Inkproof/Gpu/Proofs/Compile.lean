@@ -19,7 +19,7 @@ structure Gpu where
   state : State
   log : List Draw
 
-def Gpu.empty : Gpu := ⟨fun _ => none, ⟨[], [], [], []⟩, []⟩
+def Gpu.empty : Gpu := ⟨fun _ => none, ⟨[], [], [], [], [], 0, []⟩, []⟩
 
 def Gpu.set (g : Gpu) (h : Nat) (v : Option (List UInt32)) : Gpu :=
   { g with buffers := fun k => if k = h then v else g.buffers k }
@@ -31,9 +31,9 @@ def Gpu.step (g : Gpu) : Op → Gpu
   | .delete h => g.set h none
   | .uniform k ws => { g with state := g.state.set k ws }
   | .scissor ws => { g with state := { g.state with scissor := ws } }
-  | .draw h n =>
+  | .draw h n s =>
     match g.buffers h with
-    | some w => { g with log := g.log ++ [⟨w, n, g.state⟩] }
+    | some w => { g with state := { g.state with stride := s }, log := g.log ++ [⟨w, n, { g.state with stride := s }⟩] }
     | none => g
 
 def Gpu.run (g : Gpu) (ops : List Op) : Gpu := ops.foldl Gpu.step g
@@ -142,10 +142,10 @@ private theorem run_deletes_flatMap_out (g : Gpu) (l : List Entry) (k : Nat)
     rw [List.flatMap_cons, Gpu.run_append, ih _ (fun e he => hk e (List.mem_cons_of_mem _ he)),
       run_deletes_out _ _ _ _ (hk f (List.mem_cons_self ..))]
 
-def Item.toDraw (i : Item) : Draw := Draw.mk i.words (i.words.length / 2) i.state
+def Item.toDraw (i : Item) : Draw := Draw.mk i.words (i.words.length / i.state.stride) i.state
 
 private theorem itemsOf_map (h : Nat) (ps : List (List UInt32 × State)) :
-    (itemsOf h ps).map Item.toDraw = ps.map fun p => Draw.mk p.1 (p.1.length / 2) p.2 := by
+    (itemsOf h ps).map Item.toDraw = ps.map fun p => Draw.mk p.1 (p.1.length / p.2.stride) p.2 := by
   induction ps generalizing h with
   | nil => simp [itemsOf]
   | cons c cs ih => obtain ⟨w, u⟩ := c; simp [itemsOf, ih, Item.toDraw]
@@ -158,7 +158,7 @@ private theorem items_cmds (tess : Scene.Command → List UInt32) (t : Tile) :
 tile's transform, its colour and its clip. -/
 def frameDraws (tess : Scene.Command → List UInt32) (tiles : List Tile) : List Draw :=
   tiles.flatMap fun t => t.list.paintOrder.map fun c =>
-    Draw.mk (tess c) ((tess c).length / 2) (t.stateOf c)
+    Draw.mk (tess c) ((tess c).length / (t.stateOf c).stride) (t.stateOf c)
 
 /-- The buffers the cache claims are resident hold what it says, and its handles are disjoint and
 below `next`. -/
@@ -202,7 +202,7 @@ private theorem stageTile_inv (tess : Scene.Command → List UInt32) (s : Stage)
     (hs : s.Inv g) :
     (stageTile tess s t).Inv g ∧
     (stageTile tess s t).items.map Item.toDraw =
-      s.items.map Item.toDraw ++ (t.items tess).map fun p => Draw.mk p.1 (p.1.length / 2) p.2 := by
+      s.items.map Item.toDraw ++ (t.items tess).map fun p => Draw.mk p.1 (p.1.length / p.2.stride) p.2 := by
   obtain ⟨hv, hi, hset⟩ := hs
   have hmap := fun h ps => itemsOf_map h ps
   unfold stageTile
@@ -295,7 +295,7 @@ private theorem run_draws (g : Gpu) (L : List Item)
   | cons i L ih =>
     have hi := h i (List.mem_cons_self ..)
     have hs : g.run i.ops =
-        ⟨g.buffers, i.state, g.log ++ [Draw.mk i.words (i.words.length / 2) i.state]⟩ := by
+        ⟨g.buffers, i.state, g.log ++ [Draw.mk i.words (i.words.length / i.state.stride) i.state]⟩ := by
       simp [Item.ops, Gpu.run, Gpu.step, State.set, hi]
     have := ih (g.run i.ops) (fun j hj => by
       rw [hs]; simpa using h j (List.mem_cons_of_mem _ hj))
@@ -452,7 +452,7 @@ theorem compile_cached (tess : Scene.Command → List UInt32) (c : Cache) (tiles
       simp only [List.mem_filter, List.any_eq_true]
       exact ⟨he, t, ht, by simpa using hw⟩
   · simp only [Item.ops, List.mem_cons, List.not_mem_nil, or_false] at ho
-    rcases ho with rfl | rfl | rfl | rfl | rfl <;> simp [Op.IsUpload]
+    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> simp [Op.IsUpload]
 
 theorem Op.toCmd_wellFormed (o : Op)
     (h : (∀ h ws, o = .upload h ws → ws.length < UInt32.size) ∧
@@ -475,8 +475,8 @@ theorem compileCmds_eq (tess : Scene.Command → List UInt32) (c : Cache) (tiles
 
 @[simp] theorem Op.toCmd_scissor (ws : List UInt32) : (Op.scissor ws).toCmd = ⟨8, [.words ws]⟩ := rfl
 
-@[simp] theorem Op.toCmd_draw (h n : Nat) :
-    (Op.draw h n).toCmd = ⟨5, [.u32 h.toUInt32, .u32 n.toUInt32]⟩ := rfl
+@[simp] theorem Op.toCmd_draw (h n w : Nat) :
+    (Op.draw h n w).toCmd = ⟨5, [.u32 h.toUInt32, .u32 n.toUInt32, .u32 w.toUInt32]⟩ := rfl
 
 theorem Tile.cmds_eq (tess : Scene.Command → List UInt32) (t : Tile) :
     t.cmds tess = t.list.paintOrder.map tess := rfl
@@ -535,15 +535,20 @@ theorem State.set_slope (s : State) (ws : List UInt32) : (s.set 0 ws) = { s with
 
 theorem State.set_offset (s : State) (ws : List UInt32) : (s.set 1 ws) = { s with offset := ws } := rfl
 
-theorem State.set_colour (s : State) (ws : List UInt32) : (s.set 2 ws) = { s with colour := ws } := rfl
+theorem State.set_size (s : State) (ws : List UInt32) : (s.set 2 ws) = { s with size := ws } := rfl
 
-theorem State.set_other (s : State) (k : Nat) (ws : List UInt32) (h : 3 ≤ k) : s.set k ws = s := by
+theorem State.set_view (s : State) (ws : List UInt32) : (s.set 3 ws) = { s with view := ws } := rfl
+
+theorem State.set_colour (s : State) (ws : List UInt32) : (s.set 4 ws) = { s with colour := ws } := rfl
+
+theorem State.set_other (s : State) (k : Nat) (ws : List UInt32) (h : 5 ≤ k) : s.set k ws = s := by
   match k, h with
-  | k + 3, _ => rfl
+  | k + 5, _ => rfl
 
 theorem Item.ops_eq (i : Item) :
-    i.ops = [.uniform 0 i.state.slope, .uniform 1 i.state.offset, .uniform 2 i.state.colour,
-      .scissor i.state.scissor, .draw i.handle (i.words.length / 2)] := rfl
+    i.ops = [.uniform 0 i.state.slope, .uniform 1 i.state.offset, .uniform 2 i.state.size,
+      .uniform 3 i.state.view, .uniform 4 i.state.colour, .scissor i.state.scissor,
+      .draw i.handle (i.words.length / i.state.stride) i.state.stride] := rfl
 
 theorem Tile.items_eq (tess : Scene.Command → List UInt32) (t : Tile) :
     t.items tess = t.list.paintOrder.map fun c => (tess c, t.stateOf c) := rfl

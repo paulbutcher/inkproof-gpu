@@ -19,9 +19,22 @@ theorem FieldTy.jsRead_words : FieldTy.words.jsRead = "r.words()" := rfl
 def uniformNames : List String :=
   (vertexShader.uniforms ++ fragmentShader.uniforms).map (·.name)
 
-theorem uniformNames_eq : uniformNames = ["u_slope", "u_offset", "u_colour"] := rfl
+theorem uniformNames_eq :
+    uniformNames = ["u_slope", "u_offset", "u_size", "u_view", "u_colour"] := rfl
 
-/-- The WebGL2 realisation of each command, over `gl`, the context, and `s`, the interpreter state. `createProgram` builds the renderer's program, and `uniform` takes the number of a uniform of that program; `draw` reads each vertex as two floats bound to attribute 0, and `scissor` takes four 32-bit integers (x, y, width, height from the bottom left) or none to draw unrestricted. -/
+/-- The value each attribute of the vertex shader after the first takes when a vertex has no words for it. -/
+def attributeDefaults : List (Nat × Nat) := [(1, 0), (0, 0)]
+
+theorem attributeDefaults_eq : attributeDefaults = [(1, 0), (0, 0)] := rfl
+
+/-- The lines that bind a vertex buffer to the attributes of the vertex shader. A vertex's words are two floats for each attribute in order, as many as its stride in words says, and the rest take their defaults. -/
+def attributeLines : List String :=
+  ["const n = a[2] / 2;", "for (let i = 0; i < n; i++) {", "  gl.enableVertexAttribArray(i);",
+   "  gl.vertexAttribPointer(i, 2, gl.FLOAT, false, 4 * a[2], 8 * i);", "}"] ++
+  (attributeDefaults.mapIdx fun i d =>
+    s!"if (n <= {i + 1}) \{ gl.disableVertexAttribArray({i + 1}); gl.vertexAttrib2f({i + 1}, {d.1}, {d.2}); }")
+
+/-- The WebGL2 realisation of each command, over `gl`, the context, and `s`, the interpreter state. `createProgram` builds the renderer's program, and `uniform` takes the number of a uniform of that program; `draw` reads each vertex as the number of words its third operand gives, two floats for each attribute of the vertex shader in order, with the defaults of `attributeDefaults` for any it has no words for, and `scissor` takes four 32-bit integers (x, y, width, height from the bottom left) or none to draw unrestricted. -/
 def webglBody : String → List String
   | "createBuffer" => ["s.buffers.set(a[0], gl.createBuffer());"]
   | "bufferData" => ["gl.bindBuffer(gl.ARRAY_BUFFER, s.buffers.get(a[0]));",
@@ -30,9 +43,8 @@ def webglBody : String → List String
   | "useProgram" => ["s.current = s.programs.get(a[0]);", "gl.useProgram(s.current.program);"]
   | "uniform" => ["const w = new Float32Array(a[1].buffer);",
       "gl[\"uniform\" + w.length + \"fv\"](s.current.uniforms[a[0]], w);"]
-  | "draw" => ["gl.bindBuffer(gl.ARRAY_BUFFER, s.buffers.get(a[0]));",
-      "gl.enableVertexAttribArray(0);", "gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);",
-      "gl.drawArrays(gl.TRIANGLES, 0, a[1]);"]
+  | "draw" => ["gl.bindBuffer(gl.ARRAY_BUFFER, s.buffers.get(a[0]));"] ++ attributeLines ++
+      ["gl.drawArrays(gl.TRIANGLES, 0, a[1]);"]
   | "clear" => ["gl.clearColor((a[0] >>> 24) / 255, ((a[0] >>> 16) & 255) / 255,",
       "  ((a[0] >>> 8) & 255) / 255, (a[0] & 255) / 255);", "gl.clear(gl.COLOR_BUFFER_BIT);"]
   | "createProgram" => ["s.programs.set(a[0], buildProgram(gl));"]
@@ -68,6 +80,24 @@ def jsRunCase (s : Spec) : String :=
 
 theorem jsRunCase_eq (s : Spec) :
     jsRunCase s = s!"    case {s.op}: \{\n{"\n".intercalate ((webglBody s.name).map ("      " ++ ·))}\n      break;\n    }" := rfl
+
+/-- The lines of `buildProgram` that give each attribute of the vertex shader its location, its position in `ins`. -/
+def bindLines : String :=
+  "\n".intercalate ((vertexShader.ins.mapIdx fun i v =>
+    s!"  gl.bindAttribLocation(program, {i}, {v.name.quote});"))
+
+theorem attributeLines_eq :
+    attributeLines =
+      ["const n = a[2] / 2;", "for (let i = 0; i < n; i++) {", "  gl.enableVertexAttribArray(i);",
+       "  gl.vertexAttribPointer(i, 2, gl.FLOAT, false, 4 * a[2], 8 * i);", "}",
+       "if (n <= 1) { gl.disableVertexAttribArray(1); gl.vertexAttrib2f(1, 1, 0); }",
+       "if (n <= 2) { gl.disableVertexAttribArray(2); gl.vertexAttrib2f(2, 0, 0); }"] := by decide +kernel
+
+theorem bindLines_eq :
+    bindLines = "\n".intercalate
+      ((["a_position", "a_dir", "a_corner"] : List String).mapIdx fun i n =>
+        s!"  gl.bindAttribLocation(program, {i}, {n.quote});") := by
+  simp [bindLines, vertexShader, List.mapIdx_eq_zipIdx_map]
 
 /-- The generated decoder and interpreter. -/
 def js : String :=
@@ -109,7 +139,7 @@ function buildProgram(gl) {
   const program = gl.createProgram();
   const shaders = [compile(gl, gl.VERTEX_SHADER, VERTEX_SOURCE), compile(gl, gl.FRAGMENT_SHADER, FRAGMENT_SOURCE)];
   for (const shader of shaders) gl.attachShader(program, shader);
-  gl.bindAttribLocation(program, 0, \"a_position\");
+" ++ bindLines ++ "
   gl.linkProgram(program);
   const linked = gl.getProgramParameter(program, gl.LINK_STATUS);
   for (const shader of shaders) gl.deleteShader(shader);

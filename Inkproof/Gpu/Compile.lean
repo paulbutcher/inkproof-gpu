@@ -15,7 +15,7 @@ inductive Op where
   | delete (h : Nat)
   | uniform (k : Nat) (ws : List UInt32)
   | scissor (ws : List UInt32)
-  | draw (h : Nat) (n : Nat)
+  | draw (h : Nat) (n : Nat) (stride : Nat)
   deriving DecidableEq, Repr
 
 /-- The wire command for an operation. Handles are taken modulo `2 ^ 32`. -/
@@ -25,13 +25,16 @@ def Op.toCmd : Op → Cmd
   | .delete h => ⟨2, [.u32 h.toUInt32]⟩
   | .uniform k ws => ⟨4, [.u32 k.toUInt32, .words ws]⟩
   | .scissor ws => ⟨8, [.words ws]⟩
-  | .draw h n => ⟨5, [.u32 h.toUInt32, .u32 n.toUInt32]⟩
+  | .draw h n w => ⟨5, [.u32 h.toUInt32, .u32 n.toUInt32, .u32 w.toUInt32]⟩
 
-/-- What a draw reads besides its vertices: the uniforms `u_slope`, `u_offset` and `u_colour` (numbered 0 to 2), as Float32 words, and the scissor, which is four Int32 words (x, y, width, height) or none for no restriction. -/
+/-- What a draw reads besides its vertices: the uniforms `u_slope`, `u_offset`, `u_size`, `u_view` and `u_colour` (numbered 0 to 4), as Float32 words, the stride in words of a vertex (two for a position alone, six for a position, a direction and a corner), and the scissor, which is four Int32 words (x, y, width, height) or none for no restriction. -/
 structure State where
   slope : List UInt32
   offset : List UInt32
+  size : List UInt32
+  view : List UInt32
   colour : List UInt32
+  stride : Nat
   scissor : List UInt32
   deriving DecidableEq
 
@@ -40,7 +43,9 @@ def State.set (s : State) (k : Nat) (ws : List UInt32) : State :=
   match k with
   | 0 => { s with slope := ws }
   | 1 => { s with offset := ws }
-  | 2 => { s with colour := ws }
+  | 2 => { s with size := ws }
+  | 3 => { s with view := ws }
+  | 4 => { s with colour := ws }
   | _ => s
 
 /-- A colour as the Float32 words red, green, blue and alpha, each in 0 to 1. -/
@@ -56,11 +61,14 @@ def clipRect : Scene.Shape → Option (Option Scene.Rect)
     | some (some r') => some (r.meet r')
   | _ => none
 
-/-- One tile: the display list it covers, the transform uniforms for the current view, and the scissor words for a rectangle in grid coordinates (four Int32 words, x, y, width and height in device pixels from the bottom left). -/
+/-- One tile: the display list it covers, the transform uniforms for the current view, the view uniform of the target, the stride of its vertices, the stroke size of a shape in pixels (one Float32 word, which only strips and markers use) and the scissor words for a rectangle in grid coordinates (four Int32 words, x, y, width and height in device pixels from the bottom left). -/
 structure Tile where
   list : Scene.DisplayList
   slope : List UInt32
   offset : List UInt32
+  view : List UInt32
+  stride : Nat
+  size : Scene.Shape → List UInt32
   scissor : Scene.Rect → List UInt32
 
 /-- The uniform colour of a shading, or `none` for a gradient, which the renderer does not draw. -/
@@ -71,9 +79,9 @@ def shadingColour : Scene.Shading → Option Scene.Color
 /-- The state a command is drawn in. A command that is clipped to nothing, or whose shading is a gradient, gets an empty scissor, which draws nothing. -/
 def Tile.stateOf (t : Tile) (c : Scene.Command) : State :=
   match shadingColour c.color with
-  | none => ⟨t.slope, t.offset, colourWords ⟨0, 0, 0, 0⟩, [0, 0, 0, 0]⟩
+  | none => ⟨t.slope, t.offset, t.size c.shape, t.view, colourWords ⟨0, 0, 0, 0⟩, t.stride, [0, 0, 0, 0]⟩
   | some k =>
-    ⟨t.slope, t.offset, colourWords k,
+    ⟨t.slope, t.offset, t.size c.shape, t.view, colourWords k, t.stride,
       match clipRect c.shape with
       | none => []
       | some none => [0, 0, 0, 0]
@@ -105,8 +113,9 @@ structure Item where
 
 /-- The operations of one draw: set the state, then draw. -/
 def Item.ops (i : Item) : List Op :=
-  [.uniform 0 i.state.slope, .uniform 1 i.state.offset, .uniform 2 i.state.colour,
-    .scissor i.state.scissor, .draw i.handle (i.words.length / 2)]
+  [.uniform 0 i.state.slope, .uniform 1 i.state.offset, .uniform 2 i.state.size,
+    .uniform 3 i.state.view, .uniform 4 i.state.colour, .scissor i.state.scissor,
+    .draw i.handle (i.words.length / i.state.stride) i.state.stride]
 
 def itemsOf : Nat → List (List UInt32 × State) → List Item
   | _, [] => []
@@ -182,6 +191,36 @@ def stageTile (tess : Scene.Command → List UInt32) (s : Stage) (t : Tile) : St
     { cache := { entries := s.cache.entries ++ [⟨cs, s.cache.next⟩], next := s.cache.next + cs.length }
       ops := s.ops ++ uploads s.cache.next cs
       items := s.items ++ itemsOf s.cache.next (t.items tess) }
+
+/-- `Tile.items`, given the vertex words of the commands, which are those of `Tile.cmds`, so that they are built once. -/
+private def Tile.itemsFrom (cs : List (List UInt32)) (t : Tile) : List (List UInt32 × State) :=
+  (Array.zip cs.toArray (t.list.paintOrder.map t.stateOf).toArray).toList
+
+private theorem zip_toArray {α β : Type} (a : List α) (b : List β) :
+    (Array.zip a.toArray b.toArray).toList = List.zip a b := by
+  simp only [Array.zip, Array.toList_zipWith]; rfl
+
+private theorem Tile.items_eq_itemsFrom (tess : Scene.Command → List UInt32) (t : Tile) :
+    t.items tess = t.itemsFrom (t.cmds tess) := by
+  simp only [Tile.items, Tile.itemsFrom, Tile.cmds]
+  rw [zip_toArray]
+  induction t.list.paintOrder with
+  | nil => rfl
+  | cons c cs ih => simp [List.zip_cons_cons] at ih ⊢; simp [ih]
+
+private def stageTileShared (tess : Scene.Command → List UInt32) (s : Stage) (t : Tile) : Stage :=
+  let cs := t.cmds tess
+  match s.cache.entries.find? fun e => decide (e.words = cs) with
+  | some e => { s with items := s.items ++ itemsOf e.base (t.itemsFrom cs) }
+  | none =>
+    { cache := { entries := s.cache.entries ++ [⟨cs, s.cache.next⟩], next := s.cache.next + cs.length }
+      ops := s.ops ++ uploads s.cache.next cs
+      items := s.items ++ itemsOf s.cache.next (t.itemsFrom cs) }
+
+/-- Builds the vertex words of a tile once, not twice, which matters for tiles of many commands in the browser. -/
+@[csimp] private theorem stageTile_eq_stageTileShared : @stageTile = @stageTileShared := by
+  funext tess s t
+  simp only [stageTile, stageTileShared, Tile.items_eq_itemsFrom]
 
 def Tile.Cached (tess : Scene.Command → List UInt32) (c : Cache) (t : Tile) : Prop :=
   ∃ e ∈ c.entries, e.words = t.cmds tess

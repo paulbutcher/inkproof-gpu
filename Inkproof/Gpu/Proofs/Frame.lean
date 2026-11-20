@@ -23,6 +23,12 @@ theorem pixelTile_slope (w h : Nat) (l : Scene.DisplayList) :
     (pixelTile w h l).slope =
       [(ratToFloat32 (pixelX w).slope).toBits, (ratToFloat32 (pixelY h).slope).toBits] := rfl
 
+theorem viewWords_eq (w h : Nat) :
+    viewWords w h = [(ratToFloat32 (w / 2)).toBits, (ratToFloat32 (h / 2)).toBits,
+      (ratToFloat32 (2 / w)).toBits, (ratToFloat32 (2 / h)).toBits] := rfl
+
+theorem pixelTile_stride (w h : Nat) (l : Scene.DisplayList) : (pixelTile w h l).stride = 2 := rfl
+
 theorem pixelTile_offset (w h : Nat) (l : Scene.DisplayList) :
     (pixelTile w h l).offset =
       [(ratToFloat32 (pixelX w).offset).toBits, (ratToFloat32 (pixelY h).offset).toBits] := rfl
@@ -96,10 +102,12 @@ private theorem Op.Fits.wellFormed {o : Op} (h : o.Fits) : o.toCmd.WellFormed :=
 
 private def Item.Fits (i : Item) : Prop :=
   i.state.slope.length < UInt32.size ∧ i.state.offset.length < UInt32.size ∧
+    i.state.size.length < UInt32.size ∧ i.state.view.length < UInt32.size ∧
     i.state.colour.length < UInt32.size ∧ i.state.scissor.length < UInt32.size
 
 private theorem itemsOf_fits (tess : Scene.Command → List UInt32) (t : Tile)
     (hs : t.slope.length < UInt32.size) (ho : t.offset.length < UInt32.size)
+    (hz : ∀ s, (t.size s).length < UInt32.size) (hw : t.view.length < UInt32.size)
     (hc : ∀ r, (t.scissor r).length < UInt32.size) :
     ∀ (b : Nat) (ps : List (List UInt32 × State)), (∀ p ∈ ps, ∃ c ∈ t.list.paintOrder, p = (tess c, t.stateOf c)) →
       ∀ i ∈ itemsOf b ps, i.Fits := by
@@ -115,8 +123,8 @@ private theorem itemsOf_fits (tess : Scene.Command → List UInt32) (t : Tile)
       obtain ⟨-, rfl⟩ := Prod.mk.inj he
       simp only [Tile.stateOf]
       split
-      · exact ⟨hs, ho, by simp [colourWords, UInt32.size], by simp [UInt32.size]⟩
-      · refine ⟨hs, ho, by simp [colourWords, UInt32.size], ?_⟩
+      · exact ⟨hs, ho, hz _, hw, by simp [colourWords, UInt32.size], by simp [UInt32.size]⟩
+      · refine ⟨hs, ho, hz _, hw, by simp [colourWords, UInt32.size], ?_⟩
         split
         · simp [UInt32.size]
         · simp [UInt32.size]
@@ -127,7 +135,7 @@ private theorem itemsOf_fits (tess : Scene.Command → List UInt32) (t : Tile)
 theorem compile_fits (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile)
     (htess : ∀ x, (tess x).length < UInt32.size)
     (ht : ∀ t ∈ tiles, t.slope.length < UInt32.size ∧ t.offset.length < UInt32.size ∧
-      ∀ r, (t.scissor r).length < UInt32.size) :
+      (∀ s, (t.size s).length < UInt32.size) ∧ t.view.length < UInt32.size ∧ ∀ r, (t.scissor r).length < UInt32.size) :
     ∀ o ∈ (compile tess c tiles).2, o.Fits := by
   have hup : ∀ (b : Nat) (ws : List (List UInt32)), (∀ w ∈ ws, w.length < UInt32.size) →
       ∀ o ∈ uploads b ws, o.Fits := by
@@ -160,7 +168,7 @@ theorem compile_fits (tess : Scene.Command → List UInt32) (c : Cache) (tiles :
     | nil => intro _ s h1 h2; exact ⟨h1, h2⟩
     | cons t ts ih =>
       intro hts s h1 h2
-      obtain ⟨hs, ho, hc⟩ := ht t (hts t (List.mem_cons_self ..))
+      obtain ⟨hs, ho, hz, hw, hc⟩ := ht t (hts t (List.mem_cons_self ..))
       have hps : ∀ p ∈ t.items tess, ∃ c ∈ t.list.paintOrder, p = (tess c, t.stateOf c) := by
         intro p hp
         simp only [Tile.items, List.mem_map] at hp
@@ -189,12 +197,12 @@ theorem compile_fits (tess : Scene.Command → List UInt32) (c : Cache) (tiles :
           simp only [List.mem_append] at hi
           rcases hi with hi | hi
           · exact h2 i hi
-          · exact itemsOf_fits tess t hs ho hc _ _ hps i hi
+          · exact itemsOf_fits tess t hs ho hz hw hc _ _ hps i hi
         · intro i hi
           simp only [List.mem_append] at hi
           rcases hi with hi | hi
           · exact h2 i hi
-          · exact itemsOf_fits tess t hs ho hc _ _ hps i hi
+          · exact itemsOf_fits tess t hs ho hz hw hc _ _ hps i hi
   unfold compile
   dsimp only
   have hset : ∀ o ∈ ((c.entries.filter fun e =>
@@ -212,9 +220,9 @@ theorem compile_fits (tess : Scene.Command → List UInt32) (c : Cache) (tiles :
   simp only [List.mem_append, List.mem_flatMap] at ho
   rcases ho with ho | ⟨i, hi, ho⟩
   · exact hk.1 o ho
-  · obtain ⟨a, b, c', d⟩ := hk.2 i hi
+  · obtain ⟨a, b, c', d, e, f⟩ := hk.2 i hi
     simp only [Item.ops, List.mem_cons, List.not_mem_nil, or_false] at ho
-    rcases ho with rfl | rfl | rfl | rfl | rfl <;> first | trivial | assumption
+    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> first | trivial | assumption
 
 /-- A frame decodes to itself once encoded, whatever the display list, provided the vertex words of a command fit the wire and the frame has fewer than `2 ^ 32` commands. -/
 theorem frame_roundtrip (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) (w h : Nat)
@@ -235,6 +243,6 @@ theorem frame_roundtrip (tess : Scene.Command → List UInt32) (c : Cache) (fres
   · exact (compile_fits tess c [pixelTile w h list] htess (by
       intro t ht
       obtain rfl := List.mem_singleton.mp ht
-      simp [pixelTile, UInt32.size, pixelScissor])  o ho).wellFormed
+      simp [pixelTile, UInt32.size, pixelScissor, viewWords])  o ho).wellFormed
 
 end Inkproof.Gpu

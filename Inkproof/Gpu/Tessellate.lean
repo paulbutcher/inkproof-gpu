@@ -50,6 +50,22 @@ def triangles : Shape → List Tri
 /-- A Float32 near `q`: the quotient of its numerator and denominator, each rounded to Float32 first. -/
 def ratToFloat32 (q : Rat) : Float32 := Float32.ofInt q.num / Float32.ofNat q.den
 
+/-- A vertex of a stroke: a position, a direction in the same coordinates, and a corner. The vertex shader moves the position by the corner times the stroke size in pixels, along the direction as it appears on screen (`kx`) and across it (`ky`), so the geometry does not depend on the view. -/
+structure Vtx where
+  pos : Pt
+  dir : Pt
+  kx : Rat
+  ky : Rat
+
+/-- The six words of a vertex: its position relative to `origin`, its direction and its corner, each coordinate a Float32. The subtraction is exact. -/
+def Vtx.words (origin : Pt) (v : Vtx) : List UInt32 :=
+  [(ratToFloat32 (v.pos.x - origin.x)).toBits, (ratToFloat32 (v.pos.y - origin.y)).toBits,
+   (ratToFloat32 v.dir.x).toBits, (ratToFloat32 v.dir.y).toBits,
+   (ratToFloat32 v.kx).toBits, (ratToFloat32 v.ky).toBits]
+
+/-- A point with no stroke offset: the direction is a placeholder and the corner is zero. -/
+def Vtx.plain (p : Pt) : Vtx := ⟨p, ⟨1, 0⟩, 0, 0⟩
+
 /-- A vertex as the two words of its Float32 coordinates relative to `origin`, which the vertex shader reads. The subtraction is exact. -/
 def vertexWords (origin p : Pt) : List UInt32 :=
   [(ratToFloat32 (p.x - origin.x)).toBits, (ratToFloat32 (p.y - origin.y)).toBits]
@@ -58,8 +74,59 @@ def vertexWords (origin p : Pt) : List UInt32 :=
 def triWords (origin : Pt) (t : Tri) : List UInt32 :=
   vertexWords origin t.a ++ vertexWords origin t.b ++ vertexWords origin t.c
 
-/-- The vertex words of a command, three vertices per triangle, with coordinates relative to `origin`. `tessellate origin` is the `tess` that `compile` takes, with `origin` the tile origin that the transform uniform is rebased to. -/
+/-- The vertex words of a command, three vertices per triangle, with coordinates relative to `origin`. `tessellate origin` is the `tess` that `compile` takes, with `origin` the tile origin that the transform uniform is rebased to. Strips and markers are baked at their size in list units, and a vertex is its two position words. -/
 def tessellate (origin : Pt) (c : Command) : List UInt32 :=
   ((triangles c.shape).map (triWords origin)).flatten
+
+/-- The two triangles of the rectangle about the segment from `a` to `b`, with square caps, as stroke vertices that sit at `a` or `b`. -/
+def segVertices (a b : Pt) : List Vtx :=
+  let d := a.dir b
+  [⟨a, d, -1, -1⟩, ⟨b, d, 1, -1⟩, ⟨a, d, -1, 1⟩, ⟨b, d, 1, 1⟩, ⟨a, d, -1, 1⟩, ⟨b, d, 1, -1⟩]
+
+/-- The vertices of a strip: those of each segment between adjacent values, and of each value itself, so that a value with no neighbour is still drawn, as in `stripTriangles`. -/
+def stripVertices : List (Item Pt) → List Vtx
+  | [] => []
+  | .gap :: rest => stripVertices rest
+  | .val a :: rest =>
+    segVertices a a ++
+      (match rest with
+        | .val b :: _ => segVertices a b
+        | _ => []) ++ stripVertices rest
+
+/-- The vertices of the square marker about `c`, with the corner as its offset in units of the radius. -/
+def squareVertices (c : Pt) : List Vtx :=
+  [⟨c, ⟨1, 0⟩, -1, -1⟩, ⟨c, ⟨1, 0⟩, 1, -1⟩, ⟨c, ⟨1, 0⟩, -1, 1⟩,
+   ⟨c, ⟨1, 0⟩, 1, 1⟩, ⟨c, ⟨1, 0⟩, -1, 1⟩, ⟨c, ⟨1, 0⟩, 1, -1⟩]
+
+/-- The vertices of the octagon about the circle about `c`, as a fan from the centre, with corners in units of the radius; the same octagon as `octagonTriangles`. -/
+def octagonVertices (c : Pt) : List Vtx :=
+  let k := octagonSlope
+  let v : List (Rat × Rat) :=
+    [(1, -k), (1, k), (k, 1), (-k, 1), (-1, k), (-1, -k), (-k, -1), (k, -1)]
+  let ring := v ++ v.take 1
+  (ring.zip (ring.drop 1)).flatMap fun (a, b) =>
+    [⟨c, ⟨1, 0⟩, 0, 0⟩, ⟨c, ⟨1, 0⟩, a.1, a.2⟩, ⟨c, ⟨1, 0⟩, b.1, b.2⟩]
+
+/-- The vertices that cover a shape when drawn by the vertex shader at its stroke size, which `strokeSize` gives. A strip or a marker is described apart from its size, so the vertices are the same in every view; the other shapes are as in `triangles`. -/
+def strokeVertices : Shape → List Vtx
+  | .strip _ items => stripVertices items
+  | .marker .square c _ => squareVertices c
+  | .marker .circle c _ => octagonVertices c
+  | .clipped _ s => strokeVertices s
+  | s => (triangles s).flatMap fun t => [Vtx.plain t.a, Vtx.plain t.b, Vtx.plain t.c]
+
+/-- The half width of a strip or the radius of a marker, which the vertex shader applies in pixels; zero for the other shapes. -/
+def strokeSize : Shape → Rat
+  | .strip hw _ => hw
+  | .marker _ _ r => r
+  | .clipped _ s => strokeSize s
+  | _ => 0
+
+/-- The word of a shape's stroke size as a Float32, the operand of the size uniform. -/
+def strokeSizeWords (s : Shape) : List UInt32 := [(ratToFloat32 (strokeSize s)).toBits]
+
+/-- The vertex words of a command for a view-independent stroke: `tessellate`, except that the half width of a strip and the radius of a marker are left to the size uniform, so that they are in pixels whatever the transform. -/
+def tessellateStroke (origin : Pt) (c : Command) : List UInt32 :=
+  (strokeVertices c.shape).flatMap (Vtx.words origin)
 
 end Inkproof.Gpu
