@@ -24,7 +24,7 @@ The theorems are stated against `Gpu` in `Proofs/Compile.lean`, an abstract mode
 
 `region_sub_triangles` states that every point of a polygonal shape lies in one of its triangles, and `covers_triangles` that a command's covered pixels each meet a triangle. Circles are excluded: the octagon containing the circle is checked by a test, not proved. How a GPU rasterises a triangle, which pixels it samples, is outside the theorems.
 
-The renderer's uniforms are `u_slope` and `u_offset` (two floats each) and `u_colour` (four floats, the command's colour as red, green, blue and alpha in 0 to 1). For a map from grid coordinates to clip space `clip = A * p + B` computed in double precision, a tile with origin `o` takes `u_slope = A` and `u_offset = A * o + B`, so that `(p - o) * u_slope + u_offset = clip`. Before each draw `compile` sets `u_slope` and `u_offset` from the tile (`Tile.slope`, `Tile.offset`), `u_colour` from the command's colour (`colourWords`), and the scissor.
+The renderer's uniforms are `u_slope` and `u_offset` (two floats each) and `u_colour` (four floats, the command's colour as red, green, blue and alpha in 0 to 1). For a map from grid coordinates to clip space `clip = A * p + B` computed in double precision, a tile with origin `o` takes `u_slope = A` and `u_offset = A * o + B`, so that `(p - o) * u_slope + u_offset = clip`. Before each draw `compile` sets `u_slope` and `u_offset` from the tile (`Tile.slope`, `Tile.offset`), `u_colour` from the command's colour (`colourWords`), and the scissor. Only a flat `Scene.Shading` is drawn; a command with a gradient shading gets a transparent colour and an empty scissor, so it draws nothing rather than a wrong colour (`Tile.stateOf_gradient`).
 
 ## Shader language
 

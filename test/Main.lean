@@ -26,7 +26,7 @@ def ragged : Expr := .bin .add (.var "a_position") (.vec4 (.lit 0) (.lit 0) (.li
 
 open Inkproof.Scene in
 def cmd (layer : Nat) (x : Int) : Command :=
-  ⟨layer, ⟨0, 0, 0, 255⟩, .rect ⟨x, 0, x + 1, 1⟩⟩
+  ⟨layer, .flat ⟨0, 0, 0, 255⟩, .rect ⟨x, 0, x + 1, 1⟩⟩
 
 def tess (c : Inkproof.Scene.Command) : List UInt32 := [UInt32.ofNat c.layer, 0, 1, 1, 2, 2]
 
@@ -84,25 +84,30 @@ def main (args : List String) : IO UInt32 :=
       check (decode (encode cmds) == some cmds) "round trip"⟩,
     ⟨"every shape tessellates to whole triangles",
       check (shapes.all fun sh =>
-        (tessellate ⟨0, 0⟩ ⟨0, ⟨0, 0, 0, 255⟩, sh⟩).length % 6 == 0 &&
-        !(tessellate ⟨0, 0⟩ ⟨0, ⟨0, 0, 0, 255⟩, sh⟩).isEmpty) "ragged or empty"⟩,
+        (tessellate ⟨0, 0⟩ ⟨0, .flat ⟨0, 0, 0, 255⟩, sh⟩).length % 6 == 0 &&
+        !(tessellate ⟨0, 0⟩ ⟨0, .flat ⟨0, 0, 0, 255⟩, sh⟩).isEmpty) "ragged or empty"⟩,
     ⟨"moving the origin to the shape gives the shape at the origin",
-      check (tessellate ⟨4, 8⟩ ⟨0, ⟨0, 0, 0, 255⟩, .rect ⟨5, 9, 7, 10⟩⟩ ==
-        tessellate ⟨0, 0⟩ ⟨0, ⟨0, 0, 0, 255⟩, .rect ⟨1, 1, 3, 2⟩⟩) "differs"⟩,
+      check (tessellate ⟨4, 8⟩ ⟨0, .flat ⟨0, 0, 0, 255⟩, .rect ⟨5, 9, 7, 10⟩⟩ ==
+        tessellate ⟨0, 0⟩ ⟨0, .flat ⟨0, 0, 0, 255⟩, .rect ⟨1, 1, 3, 2⟩⟩) "differs"⟩,
     ⟨"the octagon contains the circle",
       check ((discPoints ⟨3, -2⟩ 10).all fun p =>
         (Inkproof.Gpu.triangles (.marker .circle ⟨3, -2⟩ 10)).any (inTri · p)) "point outside"⟩,
     ⟨"each draw is set up with its colour and scissor",
-      let t : Tile := ⟨#[⟨0, ⟨255, 0, 0, 255⟩, .clipped ⟨0, 0, 1, 1⟩ (.rect ⟨0, 0, 4, 4⟩)⟩,
-        ⟨1, ⟨0, 0, 0, 0⟩, .rect ⟨0, 0, 1, 1⟩⟩], [0], [0], fun _ => [7, 7, 7, 7]⟩
+      let t : Tile := ⟨#[⟨0, .flat ⟨255, 0, 0, 255⟩, .clipped ⟨0, 0, 1, 1⟩ (.rect ⟨0, 0, 4, 4⟩)⟩,
+        ⟨1, .flat ⟨0, 0, 0, 0⟩, .rect ⟨0, 0, 1, 1⟩⟩], [0], [0], fun _ => [7, 7, 7, 7]⟩
       let (_, ops) := compile tess {} [t]
       check (ops.filter (fun | .scissor _ => true | _ => false) ==
           [.scissor [7, 7, 7, 7], .scissor []] &&
         ops.filter (fun | .uniform 2 _ => true | _ => false) ==
           [.uniform 2 [0x3F800000, 0, 0, 0x3F800000], .uniform 2 [0, 0, 0, 0]]) "wrong state"⟩,
+    ⟨"a gradient command is drawn with an empty scissor",
+      let g : Inkproof.Scene.Command := ⟨0, .gradient .x ⟨0, ⟨255, 0, 0, 255⟩⟩ [], .rect ⟨0, 0, 1, 1⟩⟩
+      let t : Tile := ⟨#[g], [0], [0], fun _ => [7, 7, 7, 7]⟩
+      let (_, ops) := compile tess {} [t]
+      check (ops.contains (.scissor [0, 0, 0, 0]) && !ops.contains (.scissor [7, 7, 7, 7])) "drawn"⟩,
     ⟨"a frame of 40000 commands encodes",
       let list : Inkproof.Scene.DisplayList := (Array.range 40000).map fun (i : Nat) =>
-        ⟨0, ⟨0, 0, 0, 255⟩, .marker .circle ⟨((i : Nat) : Int), 0⟩ 2⟩
+        ⟨0, .flat ⟨0, 0, 0, 255⟩, .marker .circle ⟨((i : Nat) : Int), 0⟩ 2⟩
       let bytes := frameBytes 1920 600 list ⟨255, 255, 255, 255⟩
       check (bytes.size > 0 && (bytes.data.toList.take 4 == le32 (4 + 7 * 40000))) "wrong frame"⟩,
     ⟨"unknown opcode is rejected", check (decode (encode [⟨200, []⟩]) == none) "accepted"⟩

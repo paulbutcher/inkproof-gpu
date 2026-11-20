@@ -113,12 +113,14 @@ private theorem itemsOf_fits (tess : Scene.Command → List UInt32) (t : Tile)
     rcases hi with rfl | hi
     · obtain ⟨c, _, he⟩ := hp (w, u) (List.mem_cons_self ..)
       obtain ⟨-, rfl⟩ := Prod.mk.inj he
-      refine ⟨hs, ho, by simp [Tile.stateOf, colourWords, UInt32.size], ?_⟩
       simp only [Tile.stateOf]
       split
-      · simp [UInt32.size]
-      · simp [UInt32.size]
-      · exact hc _
+      · exact ⟨hs, ho, by simp [colourWords, UInt32.size], by simp [UInt32.size]⟩
+      · refine ⟨hs, ho, by simp [colourWords, UInt32.size], ?_⟩
+        split
+        · simp [UInt32.size]
+        · simp [UInt32.size]
+        · exact hc _
     · exact ih (b + 1) (fun q hq => hp q (List.mem_cons_of_mem _ hq)) i hi
 
 /-- Every operation of a frame fits the wire when the vertex words of every command and the words of every tile do. -/

@@ -63,13 +63,21 @@ structure Tile where
   offset : List UInt32
   scissor : Scene.Rect → List UInt32
 
-/-- The state a command is drawn in. A command that is clipped to nothing gets an empty scissor, which draws nothing. -/
+/-- The uniform colour of a shading, or `none` for a gradient, which the renderer does not draw. -/
+def shadingColour : Scene.Shading → Option Scene.Color
+  | .flat c => some c
+  | .gradient .. => none
+
+/-- The state a command is drawn in. A command that is clipped to nothing, or whose shading is a gradient, gets an empty scissor, which draws nothing. -/
 def Tile.stateOf (t : Tile) (c : Scene.Command) : State :=
-  ⟨t.slope, t.offset, colourWords c.color,
-    match clipRect c.shape with
-    | none => []
-    | some none => [0, 0, 0, 0]
-    | some (some r) => t.scissor r⟩
+  match shadingColour c.color with
+  | none => ⟨t.slope, t.offset, colourWords ⟨0, 0, 0, 0⟩, [0, 0, 0, 0]⟩
+  | some k =>
+    ⟨t.slope, t.offset, colourWords k,
+      match clipRect c.shape with
+      | none => []
+      | some none => [0, 0, 0, 0]
+      | some (some r) => t.scissor r⟩
 
 /-- The vertex words of the commands of a tile, in the order they are painted. -/
 def Tile.cmds (tess : Scene.Command → List UInt32) (t : Tile) : List (List UInt32) :=

@@ -8,7 +8,7 @@ open Inkproof.Gpu
 
 def frameSize (n : Nat) (shape : Nat → Inkproof.Scene.Shape) : Nat :=
   let list : Inkproof.Scene.DisplayList := (Array.range n).map fun i =>
-    ⟨i % 3, ⟨0, 0, 0, 255⟩, shape i⟩
+    ⟨i % 3, .flat ⟨0, 0, 0, 255⟩, shape i⟩
   (frameBytes 1920 600 list ⟨255, 255, 255, 255⟩).size
 
 def main : IO UInt32 := do

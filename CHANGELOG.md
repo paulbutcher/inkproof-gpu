@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.8.0]
+
+- Builds against Scene v0.19.0; a command whose shading is a gradient is not drawn (empty scissor) until gradients are supported.
+
 ## [0.7.1]
 
 - Compiling a frame runs in constant stack in the number of commands, so a display list of 40000 commands encodes in the browser.

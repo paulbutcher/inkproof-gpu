@@ -191,8 +191,9 @@ field Inkproof.Gpu.Tile.offset : Inkproof.Gpu.Tile → List UInt32
 field Inkproof.Gpu.Tile.scissor : Inkproof.Gpu.Tile → Inkproof.Scene.Rect → List UInt32
 field Inkproof.Gpu.Tile.slope : Inkproof.Gpu.Tile → List UInt32
 def Inkproof.Gpu.Tile.stateOf : Inkproof.Gpu.Tile → Inkproof.Scene.Command → Inkproof.Gpu.State
-theorem Inkproof.Gpu.Tile.stateOf_colour : ∀ (t : Inkproof.Gpu.Tile) (c : Inkproof.Scene.Command), (t.stateOf c).colour = Inkproof.Gpu.colourWords c.color
-theorem Inkproof.Gpu.Tile.stateOf_scissor : ∀ (t : Inkproof.Gpu.Tile) (c : Inkproof.Scene.Command), (t.stateOf c).scissor = match Inkproof.Gpu.clipRect c.shape with | Option.none => [] | Option.some Option.none => [0, 0, 0, 0] | Option.some (Option.some r) => t.scissor r
+theorem Inkproof.Gpu.Tile.stateOf_colour : ∀ (t : Inkproof.Gpu.Tile) (c : Inkproof.Scene.Command) (k : Inkproof.Scene.Color), c.color = Inkproof.Scene.Shading.flat k → (t.stateOf c).colour = Inkproof.Gpu.colourWords k
+theorem Inkproof.Gpu.Tile.stateOf_gradient : ∀ (t : Inkproof.Gpu.Tile) (c : Inkproof.Scene.Command) (a : Inkproof.Scene.GradientAxis) (s : Inkproof.Scene.Stop) (rest : List Inkproof.Scene.Stop), c.color = Inkproof.Scene.Shading.gradient a s rest → (t.stateOf c).scissor = [0, 0, 0, 0]
+theorem Inkproof.Gpu.Tile.stateOf_scissor : ∀ (t : Inkproof.Gpu.Tile) (c : Inkproof.Scene.Command) (k : Inkproof.Scene.Color), c.color = Inkproof.Scene.Shading.flat k → (t.stateOf c).scissor = match Inkproof.Gpu.clipRect c.shape with | Option.none => [] | Option.some Option.none => [0, 0, 0, 0] | Option.some (Option.some r) => t.scissor r
 theorem Inkproof.Gpu.Tile.stateOf_transform : ∀ (t : Inkproof.Gpu.Tile) (c : Inkproof.Scene.Command), (t.stateOf c).slope = t.slope ∧ (t.stateOf c).offset = t.offset
 theorem Inkproof.Gpu.between_param : ∀ {a b v : Rat}, Inkproof.Scene.Between a b v → ∃ s, 0 ≤ s ∧ s ≤ 1 ∧ v = a + s * (b - a)
 def Inkproof.Gpu.boxTriangles : Rat → Rat → Rat → Rat → List Inkproof.Scene.Tri
@@ -286,6 +287,9 @@ def Inkproof.Gpu.programHandle : UInt32
 theorem Inkproof.Gpu.programHandle_eq : Inkproof.Gpu.programHandle = 0
 def Inkproof.Gpu.ratToFloat32 : Rat → Float32
 theorem Inkproof.Gpu.region_sub_triangles : ∀ (s : Inkproof.Scene.Shape), Inkproof.Gpu.Polygonal s → ∀ (p : Inkproof.Scene.Pt), s.region p → ∃ t, t ∈ Inkproof.Gpu.triangles s ∧ t.region p
+def Inkproof.Gpu.shadingColour : Inkproof.Scene.Shading → Option Inkproof.Scene.Color
+theorem Inkproof.Gpu.shadingColour_flat : ∀ (k : Inkproof.Scene.Color), Inkproof.Gpu.shadingColour (Inkproof.Scene.Shading.flat k) = Option.some k
+theorem Inkproof.Gpu.shadingColour_gradient : ∀ (a : Inkproof.Scene.GradientAxis) (s : Inkproof.Scene.Stop) (rest : List Inkproof.Scene.Stop), Inkproof.Gpu.shadingColour (Inkproof.Scene.Shading.gradient a s rest) = Option.none
 def Inkproof.Gpu.spanTriangles : Rat → Rat → Rat → Rat → Rat → Rat → List Inkproof.Scene.Tri
 theorem Inkproof.Gpu.span_sub_spanTriangles : ∀ {x0 x1 l0 l1 h0 h1 : Rat} {p : Inkproof.Scene.Pt}, Inkproof.Scene.Region.span x0 x1 l0 l1 h0 h1 p → ∃ t, t ∈ Inkproof.Gpu.spanTriangles x0 x1 l0 l1 h0 h1 ∧ t.region p
 def Inkproof.Gpu.specOf : UInt8 → Option Inkproof.Gpu.Spec

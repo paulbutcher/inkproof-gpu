@@ -467,16 +467,29 @@ theorem clipRect_region (s : Scene.Shape) (p : Scene.Pt) (h : s.region p) :
       exact hh
   | _ => simp [clipRect]
 
-theorem Tile.stateOf_colour (t : Tile) (c : Scene.Command) : (t.stateOf c).colour = colourWords c.color := rfl
+theorem shadingColour_flat (k : Scene.Color) : shadingColour (.flat k) = some k := rfl
+
+theorem shadingColour_gradient (a s rest) : shadingColour (.gradient a s rest) = none := rfl
+
+theorem Tile.stateOf_colour (t : Tile) (c : Scene.Command) (k : Scene.Color) (h : c.color = .flat k) :
+    (t.stateOf c).colour = colourWords k := by
+  simp [Tile.stateOf, shadingColour, h]
+
+/-- A gradient command is not drawn: its scissor is empty. -/
+theorem Tile.stateOf_gradient (t : Tile) (c : Scene.Command) (a s rest) (h : c.color = .gradient a s rest) :
+    (t.stateOf c).scissor = [0, 0, 0, 0] := by
+  simp [Tile.stateOf, shadingColour, h]
 
 theorem Tile.stateOf_transform (t : Tile) (c : Scene.Command) :
-    (t.stateOf c).slope = t.slope ∧ (t.stateOf c).offset = t.offset := ⟨rfl, rfl⟩
+    (t.stateOf c).slope = t.slope ∧ (t.stateOf c).offset = t.offset := by
+  unfold Tile.stateOf; split <;> exact ⟨rfl, rfl⟩
 
-theorem Tile.stateOf_scissor (t : Tile) (c : Scene.Command) :
+theorem Tile.stateOf_scissor (t : Tile) (c : Scene.Command) (k : Scene.Color) (h : c.color = .flat k) :
     (t.stateOf c).scissor = match clipRect c.shape with
       | none => []
       | some none => [0, 0, 0, 0]
-      | some (some r) => t.scissor r := rfl
+      | some (some r) => t.scissor r := by
+  unfold Tile.stateOf; rw [h]; rfl
 
 theorem colourWords_length (c : Scene.Color) : (colourWords c).length = 4 := rfl
 
