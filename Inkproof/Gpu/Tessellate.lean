@@ -16,6 +16,13 @@ def boxTriangles (x0 y0 x1 y1 : Rat) : List Tri :=
 def spanTriangles (x0 x1 l0 l1 h0 h1 : Rat) : List Tri :=
   [⟨⟨x0, l0⟩, ⟨x0, h0⟩, ⟨x1, l1⟩⟩, ⟨⟨x1, h1⟩, ⟨x1, l1⟩, ⟨x0, h0⟩⟩]
 
+/-- The triangles of the area between the segment from `(x0, ya)` to `(x1, yb)` and the line `y = y0`. A pair on one side of the line is a quadrilateral of two triangles; a pair that crosses it is split at the crossing into one triangle each side, since the quadrilateral would be a bow-tie. -/
+def areaTriangles (x0 x1 y0 ya yb : Rat) : List Tri :=
+  if (ya - y0) * (yb - y0) < 0 then
+    let xc := x0 + (ya - y0) / (ya - yb) * (x1 - x0)
+    [⟨⟨x0, y0⟩, ⟨x0, ya⟩, ⟨xc, y0⟩⟩, ⟨⟨x1, y0⟩, ⟨x1, yb⟩, ⟨xc, y0⟩⟩]
+  else spanTriangles x0 x1 y0 y0 ya yb
+
 /-- The triangles of a chain of items: those of each value and of each pair of adjacent values, with none across a gap. -/
 def chainTriangles {α : Type} (single : α → List Tri) (join : α → α → List Tri)
     (items : List (Item α)) : List Tri :=
@@ -40,7 +47,7 @@ def triangles : Shape → List Tri
       (fun a b => spanTriangles a.x b.x a.lo b.lo a.hi b.hi) items
   | .area y0 items =>
     chainTriangles (fun a => spanTriangles a.x a.x y0 y0 a.y a.y)
-      (fun a b => spanTriangles a.x b.x y0 y0 a.y b.y) items
+      (fun a b => areaTriangles a.x b.x y0 a.y b.y) items
   | .rect b => boxTriangles b.x0 b.y0 b.x1 b.y1
   | .marker .square c r => boxTriangles (c.x - r) (c.y - r) (c.x + r) (c.y + r)
   | .marker .circle c r => octagonTriangles c r

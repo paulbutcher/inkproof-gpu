@@ -26,7 +26,7 @@ The theorems are stated against `Gpu` in `Proofs/Compile.lean`, an abstract mode
 
 `tessellate origin` is the `tess` that `compile` takes: the vertex words of one command, as three vertices per triangle, each vertex two Float32 words (x then y, little-endian on the wire like all words) holding the position relative to `origin`, a point in grid coordinates that the caller also uses as the tile origin. Coordinates are converted from Scene's exact rationals to Float32 after subtracting the origin, so a tile's words do not depend on where it sits.
 
-`triangles` gives the triangles in grid coordinates. Rectangles, text boxes and square markers are two triangles; a strip is Scene's `stripTriangles`; an area or envelope is two triangles per column pair; a circle marker is an octagon fan that contains the circle. A clipped shape gives the triangles of the shape it clips; the scissor keeps the drawing inside the clip box.
+`triangles` gives the triangles in grid coordinates. Rectangles, text boxes and square markers are two triangles; a strip is Scene's `stripTriangles`; an envelope is two triangles per column pair, and so is an area, except that a pair crossing the baseline is split at the crossing into one triangle each side (`areaTriangles`); a circle marker is an octagon fan that contains the circle. A clipped shape gives the triangles of the shape it clips; the scissor keeps the drawing inside the clip box.
 
 `region_sub_triangles` states that every point of a polygonal shape lies in one of its triangles, and `covers_triangles` that a command's covered pixels each meet a triangle. Circles are excluded: the octagon containing the circle is checked by a test, not proved. How a GPU rasterises a triangle, which pixels it samples, is outside the theorems.
 

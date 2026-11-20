@@ -261,6 +261,9 @@ theorem Inkproof.Gpu.Vtx.plain_eq : ∀ (p : Inkproof.Scene.Pt), Inkproof.Gpu.Vt
 field Inkproof.Gpu.Vtx.pos : Inkproof.Gpu.Vtx → Inkproof.Scene.Pt
 def Inkproof.Gpu.Vtx.words : Inkproof.Scene.Pt → Inkproof.Gpu.Vtx → List UInt32
 theorem Inkproof.Gpu.Vtx.words_eq : ∀ (origin : Inkproof.Scene.Pt) (v : Inkproof.Gpu.Vtx), Inkproof.Gpu.Vtx.words origin v = [(Inkproof.Gpu.ratToFloat32 (v.pos.x - origin.x)).toBits, (Inkproof.Gpu.ratToFloat32 (v.pos.y - origin.y)).toBits, (Inkproof.Gpu.ratToFloat32 v.dir.x).toBits, (Inkproof.Gpu.ratToFloat32 v.dir.y).toBits, (Inkproof.Gpu.ratToFloat32 v.kx).toBits, (Inkproof.Gpu.ratToFloat32 v.ky).toBits]
+def Inkproof.Gpu.areaTriangles : Rat → Rat → Rat → Rat → Rat → List Inkproof.Scene.Tri
+theorem Inkproof.Gpu.areaTriangles_cross : ∀ {x0 x1 y0 ya yb : Rat}, (ya - y0) * (yb - y0) < 0 → Inkproof.Gpu.areaTriangles x0 x1 y0 ya yb = [{ a := { x := x0, y := y0 }, b := { x := x0, y := ya }, c := { x := x0 + (ya - y0) / (ya - yb) * (x1 - x0), y := y0 } }, { a := { x := x1, y := y0 }, b := { x := x1, y := yb }, c := { x := x0 + (ya - y0) / (ya - yb) * (x1 - x0), y := y0 } }]
+theorem Inkproof.Gpu.areaTriangles_of_not_cross : ∀ {x0 x1 y0 ya yb : Rat}, ¬(ya - y0) * (yb - y0) < 0 → Inkproof.Gpu.areaTriangles x0 x1 y0 ya yb = Inkproof.Gpu.spanTriangles x0 x1 y0 y0 ya yb
 def Inkproof.Gpu.attributeDefaults : List (Nat × Nat)
 theorem Inkproof.Gpu.attributeDefaults_eq : Inkproof.Gpu.attributeDefaults = [(1, 0), (0, 0)]
 def Inkproof.Gpu.attributeLines : List String
@@ -392,6 +395,7 @@ theorem Inkproof.Gpu.shadingState_gradient : ∀ (o : Inkproof.Scene.Pt) (a : In
 theorem Inkproof.Gpu.shadingState_short : ∀ (o : Inkproof.Scene.Pt) (sh : Inkproof.Scene.Shading) (k : Inkproof.Scene.Color) (g : Inkproof.Gpu.Gradient), Inkproof.Gpu.shadingState o sh = Option.some (k, g) → g.Short
 theorem Inkproof.Gpu.shadingState_unsupported : ∀ (o : Inkproof.Scene.Pt) (a : Inkproof.Scene.GradientAxis) (s : Inkproof.Scene.Stop) (rest : List Inkproof.Scene.Stop), ¬(rest.length ≤ Inkproof.Gpu.gradientSegments ∧ Inkproof.Gpu.stopsAscend (s :: rest) = Bool.true) → Inkproof.Gpu.shadingState o (Inkproof.Scene.Shading.gradient a s rest) = Option.none
 def Inkproof.Gpu.spanTriangles : Rat → Rat → Rat → Rat → Rat → Rat → List Inkproof.Scene.Tri
+theorem Inkproof.Gpu.span_sub_areaTriangles : ∀ {x0 x1 y0 ya yb : Rat} {p : Inkproof.Scene.Pt}, Inkproof.Scene.Region.span x0 x1 y0 y0 ya yb p → ∃ t, t ∈ Inkproof.Gpu.areaTriangles x0 x1 y0 ya yb ∧ t.region p
 theorem Inkproof.Gpu.span_sub_spanTriangles : ∀ {x0 x1 l0 l1 h0 h1 : Rat} {p : Inkproof.Scene.Pt}, Inkproof.Scene.Region.span x0 x1 l0 l1 h0 h1 p → ∃ t, t ∈ Inkproof.Gpu.spanTriangles x0 x1 l0 l1 h0 h1 ∧ t.region p
 def Inkproof.Gpu.specOf : UInt8 → Option Inkproof.Gpu.Spec
 theorem Inkproof.Gpu.specOf_eq_find : ∀ (op : UInt8), Inkproof.Gpu.specOf op = List.find? (fun x => x.op == op) Inkproof.Gpu.specs

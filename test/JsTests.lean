@@ -158,6 +158,22 @@ def matchesModel (list : Inkproof.Scene.DisplayList) (w tol : Nat) (px : Array N
     let got := px[i]!
     (if got ≥ want then got - want else want - got) ≤ tol
 
+open Inkproof.Scene in
+/-- An area on a 16 by 16 target whose series runs from (0, 2) to (16, 14) across its baseline `y = 8`. -/
+def crossingList : DisplayList :=
+  #[⟨0, .flat ⟨255, 0, 0, 255⟩, .area 8 [.val ⟨0, 2⟩, .val ⟨16, 14⟩]⟩]
+
+/-- Whether every pixel whose centre is more than a pixel from the line or the baseline is red exactly when it lies between them. -/
+def fillsBetween (px : Array Nat) : Bool :=
+  (List.range 256).all fun i =>
+    let x : Rat := (i % 16 : Nat) + 1 / 2
+    let y : Rat := (i / 16 : Nat) + 1 / 2
+    let line : Rat := 2 + 3 / 4 * x
+    let dist := if y ≥ line then y - line else line - y
+    let base := if y ≥ 8 then y - 8 else 8 - y
+    let inside := (line ≤ y ∧ y ≤ 8) ∨ (8 ≤ y ∧ y ≤ line)
+    dist ≤ 1 || base ≤ 1 || ((px[i * 4 + 1]! == 0) == inside)
+
 /-- Builds `Browser.lean` for the browser and runs it in headless Chromium, where the stack is far shallower than under node. -/
 def encodesInBrowser (dir : System.FilePath) : IO Bool := do
   let out := dir / "browser"
@@ -214,6 +230,11 @@ def main : IO UInt32 := do
     if !matchesModel gradientList 32 1 px then
       return ← fail "gradient fills match the raster model to 1 in 255 in headless Chromium"
   | none => return ← fail "gradient frame rendered in headless Chromium"
+  match ← renders dir 16 16 crossingList with
+  | some px =>
+    if !fillsBetween px then
+      return ← fail "an area that crosses its baseline fills only between the line and the baseline"
+  | none => return ← fail "crossing area frame rendered in headless Chromium"
   if !(← encodesInBrowser dir) then
     return ← fail "a frame of 40000 commands under Lasm in headless Chromium"
   for (name, text) in [("gpu.js", js), ("vertex.glsl", vertexShader.glsl),

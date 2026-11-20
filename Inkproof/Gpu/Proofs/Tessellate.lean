@@ -140,6 +140,97 @@ theorem span_sub_spanTriangles {x0 x1 l0 l1 h0 h1 : Rat} {p : Pt}
     refine ⟨_, List.mem_cons_of_mem _ List.mem_cons_self, t * s, t * (1 - s), 1 - t,
       Rat.mul_nonneg ht0 hs0, Rat.mul_nonneg ht0 h1s, h1t, by grind, by grind, by grind⟩
 
+/-- A pair of values on opposite sides of the baseline is two triangles that meet at the crossing. -/
+theorem areaTriangles_cross {x0 x1 y0 ya yb : Rat} (h : (ya - y0) * (yb - y0) < 0) :
+    areaTriangles x0 x1 y0 ya yb =
+      [⟨⟨x0, y0⟩, ⟨x0, ya⟩, ⟨x0 + (ya - y0) / (ya - yb) * (x1 - x0), y0⟩⟩,
+       ⟨⟨x1, y0⟩, ⟨x1, yb⟩, ⟨x0 + (ya - y0) / (ya - yb) * (x1 - x0), y0⟩⟩] := by
+  simp [areaTriangles, h]
+
+/-- A pair that does not cross the baseline is the quadrilateral of `spanTriangles`. -/
+theorem areaTriangles_of_not_cross {x0 x1 y0 ya yb : Rat} (h : ¬(ya - y0) * (yb - y0) < 0) :
+    areaTriangles x0 x1 y0 ya yb = spanTriangles x0 x1 y0 y0 ya yb := by
+  simp [areaTriangles, h]
+
+/-- The area between a segment and the line `y = y0` lies in the triangles of `areaTriangles`, whether or not the segment crosses the line. -/
+theorem span_sub_areaTriangles {x0 x1 y0 ya yb : Rat} {p : Pt}
+    (h : Region.span x0 x1 y0 y0 ya yb p) :
+    ∃ t ∈ areaTriangles x0 x1 y0 ya yb, t.region p := by
+  unfold areaTriangles
+  split
+  · rename_i hc
+    obtain ⟨t, ht0, ht1, hx, hy⟩ := h
+    have hne : ya - yb ≠ 0 := by
+      intro h0
+      have : ya = yb := by grind
+      subst this
+      rcases Classical.em (0 ≤ ya - y0) with hd | hd
+      · have := Rat.mul_nonneg hd hd
+        grind
+      · have := Rat.mul_nonneg (show 0 ≤ -(ya - y0) by grind) (show 0 ≤ -(ya - y0) by grind)
+        grind
+    obtain ⟨s, hs⟩ : ∃ s, s = (ya - y0) / (ya - yb) := ⟨_, rfl⟩
+    have hsd : s * (ya - yb) = ya - y0 := by rw [hs]; exact Rat.div_mul_cancel hne
+    have hk : 0 < (ya - yb) * (ya - yb) := by
+      rcases Classical.em (0 < ya - yb) with hd | hd
+      · exact Rat.mul_pos hd hd
+      · have : 0 < -(ya - yb) := by grind
+        have := Rat.mul_pos this this
+        grind
+    have sq : ∀ z : Rat, 0 ≤ z * z := fun z => by
+      rcases Classical.em (0 ≤ z) with hz | hz
+      · exact Rat.mul_nonneg hz hz
+      · have := Rat.mul_nonneg (show 0 ≤ -z by grind) (show 0 ≤ -z by grind)
+        grind
+    have e1 : s * (ya - yb) * (ya - yb) = (ya - y0) * (ya - yb) := by rw [hsd]
+    have := sq (ya - y0)
+    have := sq (yb - y0)
+    have hs0 : 0 < s := by
+      apply Classical.byContradiction; intro hh
+      have := Rat.mul_nonneg (show 0 ≤ -s by grind) (show 0 ≤ (ya - yb) * (ya - yb) by grind)
+      grind
+    have hs1 : s < 1 := by
+      apply Classical.byContradiction; intro hh
+      have := Rat.mul_nonneg (show 0 ≤ s - 1 by grind) (show 0 ≤ (ya - yb) * (ya - yb) by grind)
+      grind
+    obtain ⟨r, hr0, hr1, hry⟩ := between_param hy
+    simp only [Rat.sub_self, Rat.mul_zero, Rat.add_zero] at hry
+    have hxc : x0 + (ya - y0) / (ya - yb) * (x1 - x0) = x0 + s * (x1 - x0) := by rw [hs]
+    simp only [hxc]
+    by_cases hts : t ≤ s
+    · obtain ⟨q, hq⟩ : ∃ q, q = t / s := ⟨_, rfl⟩
+      have hqs : q * s = t := by rw [hq]; exact Rat.div_mul_cancel (by grind)
+      have hq0 : 0 ≤ q := by
+        apply Classical.byContradiction; intro hh
+        have := Rat.mul_pos (show 0 < -q by grind) hs0
+        grind
+      have hq1 : q ≤ 1 := by
+        apply Classical.byContradiction; intro hh
+        have := Rat.mul_pos (show 0 < q - 1 by grind) hs0
+        grind
+      subst hqs
+      refine ⟨_, List.mem_cons_self, (1 - r) * (1 - q), r * (1 - q), q, ?_, ?_, hq0, by grind, ?_, ?_⟩
+      · exact Rat.mul_nonneg (by grind) (by grind)
+      · exact Rat.mul_nonneg hr0 (by grind)
+      · simp only; rw [hx]; grind
+      · simp only; rw [hry]; grind
+    · obtain ⟨q, hq⟩ : ∃ q, q = (t - s) / (1 - s) := ⟨_, rfl⟩
+      have hqs : q * (1 - s) = t - s := by rw [hq]; exact Rat.div_mul_cancel (by grind)
+      have hq0 : 0 ≤ q := by
+        apply Classical.byContradiction; intro hh
+        have := Rat.mul_pos (show 0 < -q by grind) (show 0 < 1 - s by grind)
+        grind
+      have hq1 : q ≤ 1 := by
+        apply Classical.byContradiction; intro hh
+        have := Rat.mul_pos (show 0 < q - 1 by grind) (show 0 < 1 - s by grind)
+        grind
+      refine ⟨_, List.mem_cons_of_mem _ List.mem_cons_self, (1 - r) * q, r * q, 1 - q, ?_, ?_, by grind, by grind, ?_, ?_⟩
+      · exact Rat.mul_nonneg (by grind) hq0
+      · exact Rat.mul_nonneg hr0 hq0
+      · simp only; rw [hx]; grind
+      · simp only; rw [hry]; grind
+  · exact span_sub_spanTriangles h
+
 private theorem fold_covered {α : Type} {single : α → Region} {join : α → α → Region}
     {ts : α → List Tri} {tj : α → α → List Tri}
     (hs : ∀ a p, single a p → ∃ t ∈ ts a, t.region p)
@@ -197,7 +288,7 @@ theorem region_sub_triangles : ∀ (s : Shape), Polygonal s → ∀ p : Pt, s.re
       (fun _ _ _ h => span_sub_spanTriangles h) items p h
   | .area y0 items, _, p, h =>
     chain_sub_chainTriangles (fun _ _ h => span_sub_spanTriangles h)
-      (fun _ _ _ h => span_sub_spanTriangles h) items p h
+      (fun _ _ _ h => span_sub_areaTriangles h) items p h
   | .rect _, _, _, h => box_sub_boxTriangles h
   | .marker .square _ _, _, _, h => box_sub_boxTriangles h
   | .marker .circle _ _, hp, _, _ => absurd hp id
