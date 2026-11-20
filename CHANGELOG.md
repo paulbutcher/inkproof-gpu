@@ -5,6 +5,7 @@
 - Strips from `tessellateStroke` have round joins and caps, so no square corners protrude at vertices.
 - Adds `areaTriangles`: an area whose line crosses its baseline is split at the crossing and filled only between line and baseline.
 - Premultiplies the fragment colour and blends source-over, so overlapping translucent fills mix; `useProgram` enables blending.
+- Builds against Scene v0.21.0, whose raster model blends source-over.
 
 ## [0.12.0]
 
