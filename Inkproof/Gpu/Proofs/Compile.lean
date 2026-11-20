@@ -359,6 +359,41 @@ theorem compile_valid (tess : Scene.Command → List UInt32) (c : Cache) (tiles 
     (hv : c.Valid g) : (compile tess c tiles).1.Valid (g.run (compile tess c tiles).2) :=
   (compile_log tess c tiles g hv).2
 
+private theorem stageTile_entries (tess : Scene.Command → List UInt32) (s : Stage) (t : Tile) :
+    (∀ e ∈ s.cache.entries, e ∈ (stageTile tess s t).cache.entries) ∧
+    t.Cached tess (stageTile tess s t).cache := by
+  unfold stageTile Tile.Cached
+  dsimp only
+  split
+  · rename_i e he
+    exact ⟨fun e' h => h, e, List.mem_of_find?_eq_some he, by simpa using List.find?_some he⟩
+  · exact ⟨fun e h => by simp [h], ⟨⟨t.cmds tess, s.cache.next⟩, by simp, rfl⟩⟩
+
+private theorem foldl_entries (tess : Scene.Command → List UInt32) :
+    ∀ (ts : List Tile) (s : Stage),
+      (∀ e ∈ s.cache.entries, e ∈ (ts.foldl (stageTile tess) s).cache.entries) ∧
+      ∀ t ∈ ts, t.Cached tess (ts.foldl (stageTile tess) s).cache := by
+  intro ts
+  induction ts with
+  | nil => intro s; exact ⟨fun e h => h, fun t ht => nomatch ht⟩
+  | cons t ts ih =>
+    intro s
+    obtain ⟨h1, h2⟩ := ih (stageTile tess s t)
+    obtain ⟨h3, h4⟩ := stageTile_entries tess s t
+    refine ⟨fun e he => h1 e (h3 e he), fun t' ht' => ?_⟩
+    rcases List.mem_cons.mp ht' with rfl | ht'
+    · obtain ⟨e, he, hw⟩ := h4
+      exact ⟨e, h1 e he, hw⟩
+    · exact h2 t' ht'
+
+/-- After a frame, every tile of it is cached. -/
+theorem compile_cache_cached (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) :
+    ∀ t ∈ tiles, t.Cached tess (compile tess c tiles).1 := by
+  obtain ⟨s, hs, hc⟩ := compile_eq tess c tiles
+  rw [hc]
+  subst hs
+  exact (foldl_entries tess tiles _).2
+
 /-- Reusing cached buffers draws what uploading afresh would. -/
 theorem cached_eq_fresh (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) (g : Gpu)
     (hv : c.Valid g) :

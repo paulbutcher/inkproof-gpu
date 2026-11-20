@@ -59,6 +59,18 @@ def isUpload : Op → Bool
 def drawHandles (ops : List Op) : List Nat :=
   ops.filterMap fun | .draw h _ => some h | _ => none
 
+def uploadsCmd (cmds : List Cmd) : Bool := cmds.any fun c => c.op == 0 || c.op == 1
+
+open Inkproof.Scene in
+def zoomList : DisplayList :=
+  #[⟨0, .flat ⟨0, 0, 0, 255⟩, .rect ⟨10, 20, 30, 40⟩⟩, ⟨1, .flat ⟨0, 0, 0, 255⟩, .marker .circle ⟨12, 33⟩ 2⟩]
+
+def zoomPlot : Inkproof.Scene.Rect := ⟨50, 20, 450, 320⟩
+
+def zoomViews : List View := [⟨5, 35, 15, 45⟩, ⟨8, 20, 18, 38⟩, ⟨-1000, 1000, -1000, 1000⟩]
+
+def ratToFloat (q : Rat) : Float := Float.ofInt q.num / Float.ofNat q.den
+
 def main (args : List String) : IO UInt32 :=
   runTests [
     platformTest (args.contains "--expect-wasm"),
@@ -110,5 +122,26 @@ def main (args : List String) : IO UInt32 :=
         ⟨0, .flat ⟨0, 0, 0, 255⟩, .marker .circle ⟨((i : Nat) : Int), 0⟩ 2⟩
       let bytes := frameBytes 1920 600 list ⟨255, 255, 255, 255⟩
       check (bytes.size > 0 && (bytes.data.toList.take 4 == le32 (4 + 7 * 40000))) "wrong frame"⟩,
+    ⟨"zooming a frame uploads nothing",
+      let (c, _) := viewFrame (tessellate ⟨0, 0⟩) {} true 500 400 (zoomViews.getD 0 ⟨0, 1, 0, 1⟩) zoomPlot zoomList ⟨255, 255, 255, 255⟩
+      check (zoomViews.all fun v =>
+        !uploadsCmd (viewFrame (tessellate ⟨0, 0⟩) c false 500 400 v zoomPlot zoomList ⟨255, 255, 255, 255⟩).2) "uploaded"⟩,
+    ⟨"a zoomed frame places vertices within half a pixel of the pixel-coordinate frame",
+      check (zoomViews.all fun v =>
+        let ops := (compile (tessellate ⟨0, 0⟩) {} [viewTile 500 400 v zoomPlot zoomList]).2
+        let ux := ops.filterMap fun | .uniform 0 ws => some ws | _ => none
+        let uo := ops.filterMap fun | .uniform 1 ws => some ws | _ => none
+        (zoomList.toList.zip (ux.zip uo)).all fun (c, ws, wo) =>
+          match ws, wo with
+          | [sx, sy], [ox, oy] =>
+            (Inkproof.Gpu.triangles c.shape).all fun t => [t.a, t.b, t.c].all fun p =>
+              let fx := Float32.ofBits (sx) ; let fy := Float32.ofBits sy
+              let cx := (ratToFloat32 p.x) * fx + Float32.ofBits ox
+              let cy := (ratToFloat32 p.y) * fy + Float32.ofBits oy
+              let px := (cx.toFloat + 1) / 2 * 500
+              let py := (1 - cy.toFloat) / 2 * 400
+              (px - ratToFloat ((viewX v zoomPlot).apply p.x)).abs ≤ 0.5 &&
+                (py - ratToFloat ((viewY v zoomPlot).apply p.y)).abs ≤ 0.5
+          | _, _ => false) "off by more than half a pixel"⟩,
     ⟨"unknown opcode is rejected", check (decode (encode [⟨200, []⟩]) == none) "accepted"⟩
   ]

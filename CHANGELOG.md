@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.9.0]
+
+- Adds `viewFrame` and `viewTile`, a frame of a display list in data coordinates under a view, so zooming reuses uploaded buffers.
+
 ## [0.8.0]
 
 - Builds against Scene v0.19.0; a command whose shading is a gradient is not drawn (empty scissor) until gradients are supported.
