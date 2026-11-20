@@ -2,6 +2,7 @@
 Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
+import Inkproof.Gpu.Gradient
 import Inkproof.Gpu.Wire
 import Inkproof.Scene.Clip
 import Inkproof.Scene.PaintOrder
@@ -27,7 +28,7 @@ def Op.toCmd : Op → Cmd
   | .scissor ws => ⟨8, [.words ws]⟩
   | .draw h n w => ⟨5, [.u32 h.toUInt32, .u32 n.toUInt32, .u32 w.toUInt32]⟩
 
-/-- What a draw reads besides its vertices: the uniforms `u_slope`, `u_offset`, `u_size`, `u_view` and `u_colour` (numbered 0 to 4), as Float32 words, the stride in words of a vertex (two for a position alone, six for a position, a direction and a corner), and the scissor, which is four Int32 words (x, y, width, height) or none for no restriction. -/
+/-- What a draw reads besides its vertices: the uniforms `u_slope`, `u_offset`, `u_size`, `u_view` and `u_colour` (numbered 0 to 4), as Float32 words, then the gradient uniforms (`u_axis`, `u_start`, `u_inv` and `u_delta0` to `u_delta3`, numbered 5 to 11), the stride in words of a vertex (two for a position alone, six for a position, a direction and a corner), and the scissor, which is four Int32 words (x, y, width, height) or none for no restriction. -/
 structure State where
   slope : List UInt32
   offset : List UInt32
@@ -36,6 +37,7 @@ structure State where
   colour : List UInt32
   stride : Nat
   scissor : List UInt32
+  grad : Gradient := {}
   deriving DecidableEq
 
 /-- The state with uniform `k` set to `ws`; a number that is no uniform of the renderer leaves it unchanged. -/
@@ -46,6 +48,13 @@ def State.set (s : State) (k : Nat) (ws : List UInt32) : State :=
   | 2 => { s with size := ws }
   | 3 => { s with view := ws }
   | 4 => { s with colour := ws }
+  | 5 => { s with grad := { s.grad with axis := ws } }
+  | 6 => { s with grad := { s.grad with starts := ws } }
+  | 7 => { s with grad := { s.grad with invs := ws } }
+  | 8 => { s with grad := { s.grad with d0 := ws } }
+  | 9 => { s with grad := { s.grad with d1 := ws } }
+  | 10 => { s with grad := { s.grad with d2 := ws } }
+  | 11 => { s with grad := { s.grad with d3 := ws } }
   | _ => s
 
 /-- A colour as the Float32 words red, green, blue and alpha, each in 0 to 1. -/
@@ -61,7 +70,7 @@ def clipRect : Scene.Shape → Option (Option Scene.Rect)
     | some (some r') => some (r.meet r')
   | _ => none
 
-/-- One tile: the display list it covers, the transform uniforms for the current view, the view uniform of the target, the stride of its vertices, the stroke size of a shape in pixels (one Float32 word, which only strips and markers use) and the scissor words for a rectangle in grid coordinates (four Int32 words, x, y, width and height in device pixels from the bottom left). -/
+/-- One tile: the display list it covers, the transform uniforms for the current view, the view uniform of the target, the stride of its vertices, the stroke size of a shape in pixels (one Float32 word, which only strips and markers use), the scissor words for a rectangle in grid coordinates (four Int32 words, x, y, width and height in device pixels from the bottom left), and the origin of its vertices in grid coordinates, which gradient stops are taken relative to. -/
 structure Tile where
   list : Scene.DisplayList
   slope : List UInt32
@@ -70,22 +79,18 @@ structure Tile where
   stride : Nat
   size : Scene.Shape → List UInt32
   scissor : Scene.Rect → List UInt32
+  origin : Scene.Pt := ⟨0, 0⟩
 
-/-- The uniform colour of a shading, or `none` for a gradient, which the renderer does not draw. -/
-def shadingColour : Scene.Shading → Option Scene.Color
-  | .flat c => some c
-  | .gradient .. => none
-
-/-- The state a command is drawn in. A command that is clipped to nothing, or whose shading is a gradient, gets an empty scissor, which draws nothing. -/
+/-- The state a command is drawn in. A command that is clipped to nothing, or whose shading the renderer cannot draw (`shadingState`), gets an empty scissor, which draws nothing. -/
 def Tile.stateOf (t : Tile) (c : Scene.Command) : State :=
-  match shadingColour c.color with
-  | none => ⟨t.slope, t.offset, t.size c.shape, t.view, colourWords ⟨0, 0, 0, 0⟩, t.stride, [0, 0, 0, 0]⟩
-  | some k =>
+  match shadingState t.origin c.color with
+  | none => ⟨t.slope, t.offset, t.size c.shape, t.view, colourWords ⟨0, 0, 0, 0⟩, t.stride, [0, 0, 0, 0], .flat⟩
+  | some (k, g) =>
     ⟨t.slope, t.offset, t.size c.shape, t.view, colourWords k, t.stride,
       match clipRect c.shape with
       | none => []
       | some none => [0, 0, 0, 0]
-      | some (some r) => t.scissor r⟩
+      | some (some r) => t.scissor r, g⟩
 
 /-- The vertex words of the commands of a tile, in the order they are painted. -/
 def Tile.cmds (tess : Scene.Command → List UInt32) (t : Tile) : List (List UInt32) :=
@@ -111,11 +116,23 @@ structure Item where
   words : List UInt32
   state : State
 
+/-- The operations that set the gradient uniforms to `g`, leaving out those whose words `prev`, the gradient the previous draw left in force, already holds; with no `prev`, all of them. -/
+def Gradient.ops (prev : Option Gradient) (g : Gradient) : List Op :=
+  let set (k : Nat) (f : Gradient → List UInt32) : List Op :=
+    if prev.map f = some (f g) then [] else [.uniform k (f g)]
+  set 5 (·.axis) ++ set 6 (·.starts) ++ set 7 (·.invs) ++ set 8 (·.d0) ++ set 9 (·.d1) ++
+    set 10 (·.d2) ++ set 11 (·.d3)
+
 /-- The operations of one draw: set the state, then draw. -/
-def Item.ops (i : Item) : List Op :=
+def Item.ops (prev : Option Gradient) (i : Item) : List Op :=
   [.uniform 0 i.state.slope, .uniform 1 i.state.offset, .uniform 2 i.state.size,
-    .uniform 3 i.state.view, .uniform 4 i.state.colour, .scissor i.state.scissor,
-    .draw i.handle (i.words.length / i.state.stride) i.state.stride]
+    .uniform 3 i.state.view, .uniform 4 i.state.colour] ++ i.state.grad.ops prev ++
+    [.scissor i.state.scissor, .draw i.handle (i.words.length / i.state.stride) i.state.stride]
+
+/-- The operations of a run of draws, each leaving its gradient in force for the next. -/
+def itemsOps : Option Gradient → List Item → List Op
+  | _, [] => []
+  | prev, i :: L => i.ops prev ++ itemsOps (some i.state.grad) L
 
 def itemsOf : Nat → List (List UInt32 × State) → List Item
   | _, [] => []
@@ -143,6 +160,22 @@ private theorem itemsOfTR_go (cs : List (List UInt32 × State)) (h : Nat) (acc :
 @[csimp] private theorem itemsOf_eq_itemsOfTR : @itemsOf = @itemsOfTR := by
   funext h cs
   simp [itemsOfTR, itemsOfTR_go]
+
+private def itemsOpsTR (prev : Option Gradient) (L : List Item) : List Op :=
+  (L.foldl (fun (a : Array Op × Option Gradient) i => (a.1 ++ (i.ops a.2).toArray, some i.state.grad))
+    (#[], prev)).1.toList
+
+private theorem itemsOpsTR_go (L : List Item) (prev : Option Gradient) (acc : Array Op) :
+    (L.foldl (fun (a : Array Op × Option Gradient) i => (a.1 ++ (i.ops a.2).toArray, some i.state.grad))
+      (acc, prev)).1.toList = acc.toList ++ itemsOps prev L := by
+  induction L generalizing prev acc with
+  | nil => simp [itemsOps]
+  | cons i L ih => simp [itemsOps, ih]
+
+/-- Constant stack, which the browser needs for long display lists. -/
+@[csimp] private theorem itemsOps_eq_itemsOpsTR : @itemsOps = @itemsOpsTR := by
+  funext prev L
+  simp [itemsOpsTR, itemsOpsTR_go]
 
 private def uploadsTR (h : Nat) (ws : List (List UInt32)) : List Op :=
   (ws.foldl (fun (a : Nat × Array Op) w => (a.1 + 1, (a.2.push (.create a.1)).push (.upload a.1 w)))
@@ -235,7 +268,7 @@ def compile (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Til
   let s := tiles.foldl (stageTile tess)
     ⟨{ c with entries := c.entries.filter used },
       (c.entries.filter (!used ·)).flatMap fun e => deletes e.base e.words.length, []⟩
-  (s.cache, s.ops ++ s.items.flatMap Item.ops)
+  (s.cache, s.ops ++ itemsOps none s.items)
 
 /-- The wire form of a frame. -/
 def compileCmds (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) :

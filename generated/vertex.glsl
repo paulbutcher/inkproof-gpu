@@ -10,6 +10,7 @@ uniform vec2 u_slope;
 uniform vec2 u_offset;
 uniform float u_size;
 uniform vec4 u_view;
+out vec2 v_pos;
 void main() {
   vec2 p = ((a_position * u_slope) + u_offset);
   vec2 d = ((a_dir * u_slope) * vec2(u_view.x, u_view.y));
@@ -18,4 +19,5 @@ void main() {
   vec2 n = vec2((0.0 - t.y), t.x);
   vec2 o = (((t * a_corner.x) + (n * a_corner.y)) * u_size);
   gl_Position = vec4((p.x + (o.x * u_view.z)), (p.y + (o.y * u_view.w)), 0.0, 1.0);
+  v_pos = a_position;
 }

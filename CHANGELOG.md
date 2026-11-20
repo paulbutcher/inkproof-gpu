@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.12.0]
+
+- Draws gradient shadings, along x or y with up to five stops, for fills and strokes: `shadingColour` is replaced by `shadingState`, `Tile` has an `origin`, `State` has the gradient uniforms (numbers 5 to 11), and the fragment shader and `Shader.Expr.sat` are new.
+
 ## [0.11.0]
 
 - Adds `viewOverlayFrame`: a data list under a view plus a pixel-space overlay in one compile, with each list's buffers kept across frames and views.

@@ -55,7 +55,7 @@ theorem vertexShader_placement (v : Rat) (hv : 0 < v) (env : String → Option (
     (hw : env "u_view" = some [w0, w1, w2, w3])
     (hx : Placeable v x a c tx) (hy : Placeable v y b d ty) :
     ∃ ex ey : Float32,
-      vertexShader.run env = some [("gl_Position", [x * a + c + ex, y * b + d + ey, 0, 1])] ∧
+      vertexShader.run env = some [("gl_Position", [x * a + c + ex, y * b + d + ey, 0, 1]), ("v_pos", [x, y])] ∧
       Placed v (x * a + c) tx ∧ Placed v (y * b + d) ty :=
   ⟨_, _, vertexShader_run env x y dx dy kx ky a b c d z w0 w1 w2 w3 hp hd hk hs ho hz hw,
     placed_mul_add v hv x a c tx hx, placed_mul_add v hv y b d ty hy⟩

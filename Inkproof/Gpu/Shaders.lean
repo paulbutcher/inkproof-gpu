@@ -16,7 +16,7 @@ private def sm (a b : Expr) : Expr := .bin .mul a b
 def vertexShader : Shader where
   ins := [⟨"a_position", 2⟩, ⟨"a_dir", 2⟩, ⟨"a_corner", 2⟩]
   uniforms := [⟨"u_slope", 2⟩, ⟨"u_offset", 2⟩, ⟨"u_size", 1⟩, ⟨"u_view", 4⟩]
-  outs := []
+  outs := [⟨"v_pos", 2⟩]
   decls := [
     ⟨"p", 2, .bin .add (sm (sv "a_position") (sv "u_slope")) (sv "u_offset")⟩,
     ⟨"d", 2, sm (sm (sv "a_dir") (sv "u_slope")) (.vec2 (sc 0 "u_view") (sc 1 "u_view"))⟩,
@@ -26,21 +26,28 @@ def vertexShader : Shader where
     ⟨"o", 2, sm (.bin .add (sm (sv "t") (sc 0 "a_corner")) (sm (sv "n") (sc 1 "a_corner"))) (sv "u_size")⟩]
   assigns := [("gl_Position", .vec4
     (.bin .add (sc 0 "p") (sm (sc 0 "o") (sc 2 "u_view")))
-    (.bin .add (sc 1 "p") (sm (sc 1 "o") (sc 3 "u_view"))) (.lit 0) (.lit 1))]
+    (.bin .add (sc 1 "p") (sm (sc 1 "o") (sc 3 "u_view"))) (.lit 0) (.lit 1)),
+    ("v_pos", sv "a_position")]
 
-/-- Fills with one colour. -/
+/-- Fills with a colour that varies piecewise linearly along an axis. `v_pos` is the position the vertex was given, relative to the tile origin, interpolated across the triangle. `t` is its coordinate along the axis `u_axis` (a unit vector along x or y). `u_colour` is the colour at the first stop, and segment `i` adds `u_delta<i>`, the change of colour across it, scaled by how far `t` is across the segment: `u_start` holds the segments' start coordinates and `u_inv` the reciprocals of their lengths. A flat colour has zero deltas. -/
 def fragmentShader : Shader where
-  ins := []
-  uniforms := [⟨"u_colour", 4⟩]
+  ins := [⟨"v_pos", 2⟩]
+  uniforms := [⟨"u_colour", 4⟩, ⟨"u_axis", 2⟩, ⟨"u_start", 4⟩, ⟨"u_inv", 4⟩,
+    ⟨"u_delta0", 4⟩, ⟨"u_delta1", 4⟩, ⟨"u_delta2", 4⟩, ⟨"u_delta3", 4⟩]
   outs := [⟨"o_colour", 4⟩]
-  decls := []
-  assigns := [("o_colour", .var "u_colour")]
+  decls :=
+    ⟨"t", 1, .bin .add (sm (sc 0 "v_pos") (sc 0 "u_axis")) (sm (sc 1 "v_pos") (sc 1 "u_axis"))⟩ ::
+    (List.finRange 4).map fun i =>
+      ⟨s!"w{i.val}", 1, .sat (sm (.bin .sub (sv "t") (sc i "u_start")) (sc i "u_inv"))⟩
+  assigns := [("o_colour",
+    .bin .add (.bin .add (.bin .add (.bin .add (sv "u_colour") (sm (sv "u_delta0") (sv "w0")))
+      (sm (sv "u_delta1") (sv "w1"))) (sm (sv "u_delta2") (sv "w2"))) (sm (sv "u_delta3") (sv "w3")))]
 
 theorem vertexShader_wellTyped : vertexShader.WellTyped := by decide
 
 theorem fragmentShader_wellTyped : fragmentShader.WellTyped := by decide
 
-/-- The vertex shader places the vertex at `a_position * u_slope + u_offset`, plus the pixel offset along and across the pixel-space direction. -/
+/-- The vertex shader places the vertex at `a_position * u_slope + u_offset`, plus the pixel offset along and across the pixel-space direction, and passes `a_position` on unchanged. -/
 theorem vertexShader_run (env : String → Option (List Float32)) (x y dx dy kx ky a b c d z : Float32)
     (w0 w1 w2 w3 : Float32)
     (hp : env "a_position" = some [x, y]) (hd : env "a_dir" = some [dx, dy])
@@ -52,7 +59,7 @@ theorem vertexShader_run (env : String → Option (List Float32)) (x y dx dy kx 
           (0 - (dy * b * w1) * (1 / ((dx * a * w0) * (dx * a * w0) + (dy * b * w1) * (dy * b * w1)).sqrt)) * ky) * z) * w2,
        y * b + d + ((((dy * b * w1) * (1 / ((dx * a * w0) * (dx * a * w0) + (dy * b * w1) * (dy * b * w1)).sqrt)) * kx +
           ((dx * a * w0) * (1 / ((dx * a * w0) * (dx * a * w0) + (dy * b * w1) * (dy * b * w1)).sqrt)) * ky) * z) * w3,
-       0, 1])] := by
+       0, 1]), ("v_pos", [x, y])] := by
   simp [vertexShader, Shader.run, Expr.eval, Op.lift, Op.apply, scalar, sv, sc, sm, hp, hd, hk, hs, ho, hz, hv]
   rfl
 

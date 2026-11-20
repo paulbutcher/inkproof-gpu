@@ -20,7 +20,8 @@ def uniformNames : List String :=
   (vertexShader.uniforms ++ fragmentShader.uniforms).map (·.name)
 
 theorem uniformNames_eq :
-    uniformNames = ["u_slope", "u_offset", "u_size", "u_view", "u_colour"] := rfl
+    uniformNames = ["u_slope", "u_offset", "u_size", "u_view", "u_colour", "u_axis", "u_start", "u_inv",
+      "u_delta0", "u_delta1", "u_delta2", "u_delta3"] := rfl
 
 /-- The value each attribute of the vertex shader after the first takes when a vertex has no words for it. -/
 def attributeDefaults : List (Nat × Nat) := [(1, 0), (0, 0)]

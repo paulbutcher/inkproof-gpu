@@ -50,8 +50,8 @@ def shapes : List Shape :=
    .text ⟨0, 0, 3, 3⟩ "a", .clipped ⟨0, 0, 1, 1⟩ (.rect ⟨0, 0, 4, 4⟩)]
 
 def tiles (u : UInt32) : List Tile :=
-  [⟨#[cmd 2 0, cmd 0 1], [u], [0], [], 2, fun _ => [0], fun _ => []⟩,
-   ⟨#[cmd 1 2], [u + 1], [0], [], 2, fun _ => [0], fun _ => []⟩]
+  [⟨#[cmd 2 0, cmd 0 1], [u], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩⟩,
+   ⟨#[cmd 1 2], [u + 1], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩⟩]
 
 def isUpload : Op → Bool
   | .create _ | .upload _ _ => true
@@ -102,7 +102,7 @@ def shaderPixels (w h : Nat) (st : State) (words : List UInt32) : List (Float ×
       else if n == "u_view" then some (toFloat32s st.view)
       else none
     match vertexShader.run env with
-    | some [(_, [x, y, _, _])] =>
+    | some [(_, [x, y, _, _]), _] =>
       some ((x.toFloat + 1) / 2 * w.toFloat, (1 - y.toFloat) / 2 * h.toFloat)
     | _ => none
 
@@ -168,7 +168,7 @@ def main (args : List String) : IO UInt32 :=
       check (!ops.any isUpload && drawHandles ops == [0, 1, 2]) "uploaded again"⟩,
     ⟨"changed tile content is uploaded and the stale buffers deleted",
       let (c, _) := compile tess {} (tiles 0)
-      let (_, ops) := compile tess c [⟨#[cmd 3 9], [0], [0], [], 2, fun _ => [0], fun _ => []⟩]
+      let (_, ops) := compile tess c [⟨#[cmd 3 9], [0], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩⟩]
       check (ops.any isUpload && ops.any (fun | .delete _ => true | _ => false)) "no re-upload"⟩,
     ⟨"compiled frame survives the wire",
       let (_, cmds) := compileCmds tess {} (tiles 0)
@@ -185,22 +185,46 @@ def main (args : List String) : IO UInt32 :=
         (Inkproof.Gpu.triangles (.marker .circle ⟨3, -2⟩ 10)).any (inTri · p)) "point outside"⟩,
     ⟨"each draw is set up with its colour and scissor",
       let t : Tile := ⟨#[⟨0, .flat ⟨255, 0, 0, 255⟩, .clipped ⟨0, 0, 1, 1⟩ (.rect ⟨0, 0, 4, 4⟩)⟩,
-        ⟨1, .flat ⟨0, 0, 0, 0⟩, .rect ⟨0, 0, 1, 1⟩⟩], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7]⟩
+        ⟨1, .flat ⟨0, 0, 0, 0⟩, .rect ⟨0, 0, 1, 1⟩⟩], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨0, 0⟩⟩
       let (_, ops) := compile tess {} [t]
       check (ops.filter (fun | .scissor _ => true | _ => false) ==
           [.scissor [7, 7, 7, 7], .scissor []] &&
         ops.filter (fun | .uniform 4 _ => true | _ => false) ==
           [.uniform 4 [0x3F800000, 0, 0, 0x3F800000], .uniform 4 [0, 0, 0, 0]]) "wrong state"⟩,
-    ⟨"a gradient command is drawn with an empty scissor",
-      let g : Inkproof.Scene.Command := ⟨0, .gradient .x ⟨0, ⟨255, 0, 0, 255⟩⟩ [], .rect ⟨0, 0, 1, 1⟩⟩
-      let t : Tile := ⟨#[g], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7]⟩
+    ⟨"a gradient command is drawn with its stops as uniforms, relative to the tile origin",
+      let g : Inkproof.Scene.Command := ⟨0, .gradient .y ⟨10, ⟨255, 0, 0, 255⟩⟩
+        [⟨14, ⟨0, 0, 255, 255⟩⟩], .rect ⟨0, 0, 1, 1⟩⟩
+      let t : Tile := ⟨#[g], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨3, 4⟩⟩
+      let (_, ops) := compile tess {} [t]
+      let one : UInt32 := 0x3F800000
+      check (ops.contains (.scissor []) && ops.contains (.uniform 5 [0, one]) &&
+        ops.contains (.uniform 6 [(ratToFloat32 6).toBits, 0, 0, 0]) &&
+        ops.contains (.uniform 7 [(ratToFloat32 (1 / 4)).toBits, 0, 0, 0]) &&
+        ops.contains (.uniform 8 [(ratToFloat32 (-1)).toBits, 0, one, 0])) "wrong state"⟩,
+    ⟨"gradient uniforms are set again only when they change, and a flat colour after a gradient resets them",
+      let g : Inkproof.Scene.Command := ⟨1, .gradient .x ⟨0, ⟨255, 0, 0, 255⟩⟩ [⟨4, ⟨0, 0, 255, 255⟩⟩], .rect ⟨0, 0, 1, 1⟩⟩
+      let t : Tile := ⟨#[cmd 0 0, g, ⟨2, g.color, .rect ⟨1, 1, 2, 2⟩⟩, ⟨3, .flat ⟨0, 0, 0, 255⟩, .rect ⟨2, 2, 3, 3⟩⟩],
+        [0], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩⟩
+      let (_, ops) := compile tess {} [t]
+      let d0 := ops.filterMap fun | .uniform 8 ws => some ws | _ => none
+      check (d0.length == 3 && d0.getLast? == some [0, 0, 0, 0]) "wrong uniforms"⟩,
+    ⟨"a gradient with descending stops is drawn with an empty scissor",
+      let g : Inkproof.Scene.Command := ⟨0, .gradient .x ⟨5, ⟨255, 0, 0, 255⟩⟩
+        [⟨1, ⟨0, 0, 255, 255⟩⟩], .rect ⟨0, 0, 1, 1⟩⟩
+      let t : Tile := ⟨#[g], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨0, 0⟩⟩
+      let (_, ops) := compile tess {} [t]
+      check (ops.contains (.scissor [0, 0, 0, 0]) && !ops.contains (.scissor [7, 7, 7, 7])) "drawn"⟩,
+    ⟨"a gradient with too many stops is drawn with an empty scissor",
+      let stops : List Inkproof.Scene.Stop := (List.range 5).map fun (i : Nat) => ⟨(i : Rat) + 1, ⟨0, 0, 0, 255⟩⟩
+      let g : Inkproof.Scene.Command := ⟨0, .gradient .x ⟨0, ⟨255, 0, 0, 255⟩⟩ stops, .rect ⟨0, 0, 1, 1⟩⟩
+      let t : Tile := ⟨#[g], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨0, 0⟩⟩
       let (_, ops) := compile tess {} [t]
       check (ops.contains (.scissor [0, 0, 0, 0]) && !ops.contains (.scissor [7, 7, 7, 7])) "drawn"⟩,
     ⟨"a frame of 40000 commands encodes",
       let list : Inkproof.Scene.DisplayList := (Array.range 40000).map fun (i : Nat) =>
         ⟨0, .flat ⟨0, 0, 0, 255⟩, .marker .circle ⟨((i : Nat) : Int), 0⟩ 2⟩
       let bytes := frameBytes 1920 600 list ⟨255, 255, 255, 255⟩
-      check (bytes.size > 0 && (bytes.data.toList.take 4 == le32 (4 + 9 * 40000))) "wrong frame"⟩,
+      check (bytes.size > 0 && (bytes.data.toList.take 4 == le32 (4 + 9 * 40000 + 7))) "wrong frame"⟩,
     ⟨"zooming a frame uploads nothing",
       let (c, _) := viewFrame (tessellate ⟨0, 0⟩) {} true 500 400 (zoomViews.getD 0 ⟨0, 1, 0, 1⟩) zoomPlot zoomList ⟨255, 255, 255, 255⟩
       check (zoomViews.all fun v =>

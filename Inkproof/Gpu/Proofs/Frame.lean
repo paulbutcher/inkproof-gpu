@@ -103,7 +103,8 @@ private theorem Op.Fits.wellFormed {o : Op} (h : o.Fits) : o.toCmd.WellFormed :=
 private def Item.Fits (i : Item) : Prop :=
   i.state.slope.length < UInt32.size ∧ i.state.offset.length < UInt32.size ∧
     i.state.size.length < UInt32.size ∧ i.state.view.length < UInt32.size ∧
-    i.state.colour.length < UInt32.size ∧ i.state.scissor.length < UInt32.size
+    i.state.colour.length < UInt32.size ∧ i.state.scissor.length < UInt32.size ∧
+    i.state.grad.Short
 
 private theorem itemsOf_fits (tess : Scene.Command → List UInt32) (t : Tile)
     (hs : t.slope.length < UInt32.size) (ho : t.offset.length < UInt32.size)
@@ -123,8 +124,10 @@ private theorem itemsOf_fits (tess : Scene.Command → List UInt32) (t : Tile)
       obtain ⟨-, rfl⟩ := Prod.mk.inj he
       simp only [Tile.stateOf]
       split
-      · exact ⟨hs, ho, hz _, hw, by simp [colourWords, UInt32.size], by simp [UInt32.size]⟩
-      · refine ⟨hs, ho, hz _, hw, by simp [colourWords, UInt32.size], ?_⟩
+      · exact ⟨hs, ho, hz _, hw, by simp [colourWords, UInt32.size], by simp [UInt32.size],
+          Gradient.flat_short⟩
+      · rename_i k g hk
+        refine ⟨hs, ho, hz _, hw, by simp [colourWords, UInt32.size], ?_, shadingState_short _ _ _ _ hk⟩
         split
         · simp [UInt32.size]
         · simp [UInt32.size]
@@ -217,12 +220,22 @@ theorem compile_fits (tess : Scene.Command → List UInt32) (c : Cache) (tiles :
       (c.entries.filter fun e => !(tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
         fun e => deletes e.base e.words.length, []⟩ hset (fun i hi => nomatch hi)
   intro o ho
-  simp only [List.mem_append, List.mem_flatMap] at ho
-  rcases ho with ho | ⟨i, hi, ho⟩
+  simp only [List.mem_append] at ho
+  rcases ho with ho | ho
   · exact hk.1 o ho
-  · obtain ⟨a, b, c', d, e, f⟩ := hk.2 i hi
-    simp only [Item.ops, List.mem_cons, List.not_mem_nil, or_false] at ho
-    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> first | trivial | assumption
+  · obtain ⟨i, hi, ho⟩ := mem_itemsOps _ _ _ ho
+    obtain ⟨a, b, c', d, e, f, g0, g1, g2, g3, g4, g5, g6⟩ := hk.2 i hi
+    have small : ∀ n : Nat, n ≤ 4 → n < UInt32.size := fun n h => by simp [UInt32.size]; omega
+    replace g0 := small _ g0
+    replace g1 := small _ g1
+    replace g2 := small _ g2
+    replace g3 := small _ g3
+    replace g4 := small _ g4
+    replace g5 := small _ g5
+    replace g6 := small _ g6
+    simp only [Item.ops_none, List.mem_cons, List.not_mem_nil, or_false] at ho
+    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      first | trivial | assumption
 
 /-- A frame decodes to itself once encoded, whatever the display list, provided the vertex words of a command fit the wire and the frame has fewer than `2 ^ 32` commands. -/
 theorem frame_roundtrip (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) (w h : Nat)

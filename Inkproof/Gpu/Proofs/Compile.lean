@@ -19,7 +19,7 @@ structure Gpu where
   state : State
   log : List Draw
 
-def Gpu.empty : Gpu := ⟨fun _ => none, ⟨[], [], [], [], [], 0, []⟩, []⟩
+def Gpu.empty : Gpu := ⟨fun _ => none, ⟨[], [], [], [], [], 0, [], {}⟩, []⟩
 
 def Gpu.set (g : Gpu) (h : Nat) (v : Option (List UInt32)) : Gpu :=
   { g with buffers := fun k => if k = h then v else g.buffers k }
@@ -286,20 +286,90 @@ private theorem foldl_stage (tess : Scene.Command → List UInt32) (g : Gpu) :
     simp only [List.foldl_cons, h4, h2, frameDraws, List.flatMap_cons, List.append_assoc]
     simp [Tile.items, List.map_map, Function.comp_def]
 
-private theorem run_draws (g : Gpu) (L : List Item)
+theorem Gradient.ops_sub (prev : Option Gradient) (g : Gradient) (o : Op) (h : o ∈ g.ops prev) :
+    o ∈ g.ops none := by
+  simp only [Gradient.ops, List.mem_append] at h ⊢
+  simp only [Option.map_none, reduceCtorEq, ite_false]
+  repeat' split at h
+  all_goals grind
+
+/-- With no gradient known to be in force, all seven gradient uniforms are set. -/
+theorem Gradient.ops_none (g : Gradient) :
+    g.ops none = [.uniform 5 g.axis, .uniform 6 g.starts, .uniform 7 g.invs, .uniform 8 g.d0,
+      .uniform 9 g.d1, .uniform 10 g.d2, .uniform 11 g.d3] := by
+  simp [Gradient.ops]
+
+/-- A gradient already in force is not set again. -/
+theorem Gradient.ops_self (g : Gradient) : g.ops (some g) = [] := by
+  simp [Gradient.ops]
+
+theorem itemsOps_nil (prev : Option Gradient) : itemsOps prev [] = [] := rfl
+
+theorem itemsOps_cons (prev : Option Gradient) (i : Item) (L : List Item) :
+    itemsOps prev (i :: L) = i.ops prev ++ itemsOps (some i.state.grad) L := rfl
+
+theorem Item.ops_sub (prev : Option Gradient) (i : Item) (o : Op) (h : o ∈ i.ops prev) :
+    o ∈ i.ops none := by
+  simp only [Item.ops, List.mem_append] at h ⊢
+  rcases h with (h | h) | h
+  · exact Or.inl (Or.inl h)
+  · exact Or.inl (Or.inr (Gradient.ops_sub _ _ _ h))
+  · exact Or.inr h
+
+theorem Item.ops_none (i : Item) :
+    i.ops none = [.uniform 0 i.state.slope, .uniform 1 i.state.offset, .uniform 2 i.state.size,
+      .uniform 3 i.state.view, .uniform 4 i.state.colour, .uniform 5 i.state.grad.axis,
+      .uniform 6 i.state.grad.starts, .uniform 7 i.state.grad.invs, .uniform 8 i.state.grad.d0,
+      .uniform 9 i.state.grad.d1, .uniform 10 i.state.grad.d2, .uniform 11 i.state.grad.d3,
+      .scissor i.state.scissor, .draw i.handle (i.words.length / i.state.stride) i.state.stride] := by
+  simp [Item.ops, Gradient.ops]
+
+theorem mem_itemsOps (prev : Option Gradient) (L : List Item) (o : Op) (h : o ∈ itemsOps prev L) :
+    ∃ i ∈ L, o ∈ i.ops none := by
+  induction L generalizing prev with
+  | nil => simp [itemsOps] at h
+  | cons i L ih =>
+    simp only [itemsOps, List.mem_append] at h
+    rcases h with h | h
+    · exact ⟨i, List.mem_cons_self .., Item.ops_sub _ _ _ h⟩
+    · obtain ⟨j, hj, hj'⟩ := ih _ h
+      exact ⟨j, List.mem_cons_of_mem _ hj, hj'⟩
+
+private theorem run_gradient (g : Gpu) (prev : Option Gradient) (gr : Gradient)
+    (hp : ∀ p, prev = some p → g.state.grad = p) :
+    g.run (gr.ops prev) = { g with state := { g.state with grad := gr } } := by
+  obtain ⟨ax, st, iv, a0, a1, a2, a3⟩ := gr
+  obtain ⟨b, ⟨sl, of, sz, vw, co, sd, sc, pg⟩, lg⟩ := g
+  cases prev with
+  | none => simp [Gradient.ops, Gpu.run, Gpu.step, State.set]
+  | some p =>
+    have h := hp p rfl
+    obtain ⟨pa, ps, pi, p0, p1, p2, p3⟩ := p
+    simp only at h
+    subst h
+    simp only [Gradient.ops, Gpu.run, List.foldl_append, Option.map_some, Option.some.injEq]
+    repeat' split
+    all_goals simp_all [Gpu.step, State.set]
+
+private theorem run_draws (g : Gpu) (prev : Option Gradient) (L : List Item)
+    (hp : ∀ p, prev = some p → g.state.grad = p)
     (h : ∀ i ∈ L, g.buffers i.handle = some i.words) :
-    (g.run (L.flatMap Item.ops)).log = g.log ++ L.map Item.toDraw ∧
-    (g.run (L.flatMap Item.ops)).buffers = g.buffers := by
-  induction L generalizing g with
-  | nil => simp [Gpu.run]
+    (g.run (itemsOps prev L)).log = g.log ++ L.map Item.toDraw ∧
+    (g.run (itemsOps prev L)).buffers = g.buffers := by
+  induction L generalizing g prev with
+  | nil => simp [Gpu.run, itemsOps]
   | cons i L ih =>
     have hi := h i (List.mem_cons_self ..)
-    have hs : g.run i.ops =
+    have hs : g.run (i.ops prev) =
         ⟨g.buffers, i.state, g.log ++ [Draw.mk i.words (i.words.length / i.state.stride) i.state]⟩ := by
-      simp [Item.ops, Gpu.run, Gpu.step, State.set, hi]
-    have := ih (g.run i.ops) (fun j hj => by
-      rw [hs]; simpa using h j (List.mem_cons_of_mem _ hj))
-    rw [List.flatMap_cons, Gpu.run_append]
+      have h1 := run_gradient (g.run [.uniform 0 i.state.slope, .uniform 1 i.state.offset,
+        .uniform 2 i.state.size, .uniform 3 i.state.view, .uniform 4 i.state.colour]) prev i.state.grad
+        (by simpa [Gpu.run, Gpu.step, State.set] using hp)
+      simp only [Item.ops, Gpu.run_append, h1]
+      simp [Gpu.run, Gpu.step, State.set, hi]
+    have := ih (g.run (i.ops prev)) (some i.state.grad) (by intro p hp; rw [hs]; exact Option.some.inj hp)
+      (fun j hj => by rw [hs]; simpa using h j (List.mem_cons_of_mem _ hj))
+    rw [itemsOps, Gpu.run_append]
     rw [hs] at this ⊢
     refine ⟨by rw [this.1]; simp [Item.toDraw], this.2⟩
 
@@ -308,7 +378,7 @@ private theorem compile_eq (tess : Scene.Command → List UInt32) (c : Cache) (t
       ⟨{ c with entries := c.entries.filter fun e => tiles.any fun t => decide (e.words = t.cmds tess) },
         (c.entries.filter fun e => !(tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
           fun e => deletes e.base e.words.length, []⟩ ∧
-      compile tess c tiles = (s.cache, s.ops ++ s.items.flatMap Item.ops) :=
+      compile tess c tiles = (s.cache, s.ops ++ itemsOps none s.items) :=
   ⟨_, rfl, rfl⟩
 
 private theorem initial_inv (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) (g : Gpu)
@@ -349,7 +419,7 @@ theorem compile_log (tess : Scene.Command → List UInt32) (c : Cache) (tiles : 
   rw [← hs] at hinv hmap
   obtain ⟨hvalid, hitems, hset⟩ := hinv
   rw [Gpu.run_append]
-  obtain ⟨hlog, hbuf⟩ := run_draws (g.run s.ops) s.items (fun i hi => (hitems i hi).2)
+  obtain ⟨hlog, hbuf⟩ := run_draws (g.run s.ops) none s.items (by simp) (fun i hi => (hitems i hi).2)
   refine ⟨?_, hvalid.congr hbuf⟩
   rw [hlog, (Gpu.run_setup g s.ops hset).1]
   simp only [List.nil_append, List.map_nil] at hmap
@@ -439,8 +509,8 @@ theorem compile_cached (tess : Scene.Command → List UInt32) (c : Cache) (tiles
           rw [hn] at hsome
           simp at hsome
   intro o ho
-  simp only [List.mem_append, List.mem_flatMap] at ho
-  rcases ho with ho | ⟨i, _, ho⟩
+  simp only [List.mem_append] at ho
+  rcases ho with ho | ho
   · refine key tiles _ ?_ ?_ o ho
     · intro o ho
       simp only [List.mem_flatMap] at ho
@@ -451,8 +521,10 @@ theorem compile_cached (tess : Scene.Command → List UInt32) (c : Cache) (tiles
       refine ⟨e, ?_, hw⟩
       simp only [List.mem_filter, List.any_eq_true]
       exact ⟨he, t, ht, by simpa using hw⟩
-  · simp only [Item.ops, List.mem_cons, List.not_mem_nil, or_false] at ho
-    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> simp [Op.IsUpload]
+  · obtain ⟨i, _, ho⟩ := mem_itemsOps _ _ _ ho
+    simp only [Item.ops_none, List.mem_cons, List.not_mem_nil, or_false] at ho
+    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [Op.IsUpload]
 
 theorem Op.toCmd_wellFormed (o : Op)
     (h : (∀ h ws, o = .upload h ws → ws.length < UInt32.size) ∧
@@ -502,18 +574,72 @@ theorem clipRect_region (s : Scene.Shape) (p : Scene.Pt) (h : s.region p) :
       exact hh
   | _ => simp [clipRect]
 
-theorem shadingColour_flat (k : Scene.Color) : shadingColour (.flat k) = some k := rfl
+theorem shadingState_flat (o : Scene.Pt) (k : Scene.Color) : shadingState o (.flat k) = some (k, .flat) := rfl
 
-theorem shadingColour_gradient (a s rest) : shadingColour (.gradient a s rest) = none := rfl
+/-- A gradient that the renderer can draw has the first stop's colour as its base. -/
+theorem shadingState_gradient (o : Scene.Pt) (a : Scene.GradientAxis) (s : Scene.Stop) (rest : List Scene.Stop)
+    (hn : rest.length ≤ gradientSegments) (hs : stopsAscend (s :: rest) = true) :
+    shadingState o (.gradient a s rest) = some (s.color, .ofStops o a s rest) := by
+  simp [shadingState, hn, hs]
 
+/-- A gradient with more than `gradientSegments` segments, or with stops that descend, is not drawn. -/
+theorem shadingState_unsupported (o : Scene.Pt) (a : Scene.GradientAxis) (s : Scene.Stop) (rest : List Scene.Stop)
+    (h : ¬ (rest.length ≤ gradientSegments ∧ stopsAscend (s :: rest) = true)) :
+    shadingState o (.gradient a s rest) = none := by
+  simp [shadingState, h]
+
+/-- Every uniform of a gradient has at most four words. -/
+def Gradient.Short (g : Gradient) : Prop :=
+  g.axis.length ≤ 4 ∧ g.starts.length ≤ 4 ∧ g.invs.length ≤ 4 ∧ g.d0.length ≤ 4 ∧ g.d1.length ≤ 4 ∧
+    g.d2.length ≤ 4 ∧ g.d3.length ≤ 4
+
+theorem Gradient.flat_short : Gradient.flat.Short := by simp [Gradient.flat, Gradient.Short]
+
+theorem deltaWords_length (a b : Scene.Color) : (deltaWords a b).length = 4 := rfl
+
+theorem Gradient.ofStops_short (o : Scene.Pt) (a : Scene.GradientAxis) (s : Scene.Stop) (rest : List Scene.Stop)
+    (h : rest.length ≤ gradientSegments) : (Gradient.ofStops o a s rest).Short := by
+  have hz : ∀ i : Nat, (((((s :: rest).zip rest)[i]?).map fun (p : Scene.Stop × Scene.Stop) =>
+      deltaWords p.1.color p.2.color).getD [0, 0, 0, 0]).length = 4 := by
+    intro i
+    cases hg : ((s :: rest).zip rest)[i]? <;> simp [deltaWords]
+  have hl : ((s :: rest).zip rest).length = rest.length := by simp
+  simp only [Gradient.ofStops, Gradient.Short]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · cases a <;> simp
+  · simp only [List.length_append, List.length_map, List.length_replicate, hl]
+    have : gradientSegments = 4 := rfl
+    omega
+  · simp only [List.length_append, List.length_map, List.length_replicate, hl]
+    have : gradientSegments = 4 := rfl
+    omega
+  all_goals simp only [hz]; omega
+
+theorem shadingState_short (o : Scene.Pt) (sh : Scene.Shading) (k : Scene.Color) (g : Gradient)
+    (h : shadingState o sh = some (k, g)) : g.Short := by
+  cases sh with
+  | flat c => simp [shadingState] at h; rw [← h.2]; exact Gradient.flat_short
+  | gradient a s rest =>
+    by_cases hc : rest.length ≤ gradientSegments ∧ stopsAscend (s :: rest) = true
+    · simp [shadingState, hc] at h; rw [← h.2]; exact Gradient.ofStops_short o a s rest hc.1
+    · simp [shadingState, hc] at h
+
+/-- A flat shading is drawn in its colour with a gradient that changes nothing. -/
 theorem Tile.stateOf_colour (t : Tile) (c : Scene.Command) (k : Scene.Color) (h : c.color = .flat k) :
-    (t.stateOf c).colour = colourWords k := by
-  simp [Tile.stateOf, shadingColour, h]
+    (t.stateOf c).colour = colourWords k ∧ (t.stateOf c).grad = .flat := by
+  simp [Tile.stateOf, shadingState, h]
 
-/-- A gradient command is not drawn: its scissor is empty. -/
-theorem Tile.stateOf_gradient (t : Tile) (c : Scene.Command) (a s rest) (h : c.color = .gradient a s rest) :
+/-- A gradient that the renderer can draw takes its first stop's colour and the gradient of its stops. -/
+theorem Tile.stateOf_gradient (t : Tile) (c : Scene.Command) (a s rest) (h : c.color = .gradient a s rest)
+    (hn : rest.length ≤ gradientSegments) (hs : stopsAscend (s :: rest) = true) :
+    (t.stateOf c).colour = colourWords s.color ∧ (t.stateOf c).grad = .ofStops t.origin a s rest := by
+  simp [Tile.stateOf, shadingState, h, hn, hs]
+
+/-- A gradient that cannot be drawn gets an empty scissor, so it draws nothing. -/
+theorem Tile.stateOf_unsupported (t : Tile) (c : Scene.Command) (a s rest) (h : c.color = .gradient a s rest)
+    (hu : ¬ (rest.length ≤ gradientSegments ∧ stopsAscend (s :: rest) = true)) :
     (t.stateOf c).scissor = [0, 0, 0, 0] := by
-  simp [Tile.stateOf, shadingColour, h]
+  simp [Tile.stateOf, shadingState, h, hu]
 
 theorem Tile.stateOf_transform (t : Tile) (c : Scene.Command) :
     (t.stateOf c).slope = t.slope ∧ (t.stateOf c).offset = t.offset := by
@@ -541,14 +667,35 @@ theorem State.set_view (s : State) (ws : List UInt32) : (s.set 3 ws) = { s with 
 
 theorem State.set_colour (s : State) (ws : List UInt32) : (s.set 4 ws) = { s with colour := ws } := rfl
 
-theorem State.set_other (s : State) (k : Nat) (ws : List UInt32) (h : 5 ≤ k) : s.set k ws = s := by
-  match k, h with
-  | k + 5, _ => rfl
+theorem State.set_axis (s : State) (ws : List UInt32) :
+    s.set 5 ws = { s with grad := { s.grad with axis := ws } } := rfl
 
-theorem Item.ops_eq (i : Item) :
-    i.ops = [.uniform 0 i.state.slope, .uniform 1 i.state.offset, .uniform 2 i.state.size,
-      .uniform 3 i.state.view, .uniform 4 i.state.colour, .scissor i.state.scissor,
-      .draw i.handle (i.words.length / i.state.stride) i.state.stride] := rfl
+theorem State.set_starts (s : State) (ws : List UInt32) :
+    s.set 6 ws = { s with grad := { s.grad with starts := ws } } := rfl
+
+theorem State.set_invs (s : State) (ws : List UInt32) :
+    s.set 7 ws = { s with grad := { s.grad with invs := ws } } := rfl
+
+theorem State.set_d0 (s : State) (ws : List UInt32) :
+    s.set 8 ws = { s with grad := { s.grad with d0 := ws } } := rfl
+
+theorem State.set_d1 (s : State) (ws : List UInt32) :
+    s.set 9 ws = { s with grad := { s.grad with d1 := ws } } := rfl
+
+theorem State.set_d2 (s : State) (ws : List UInt32) :
+    s.set 10 ws = { s with grad := { s.grad with d2 := ws } } := rfl
+
+theorem State.set_d3 (s : State) (ws : List UInt32) :
+    s.set 11 ws = { s with grad := { s.grad with d3 := ws } } := rfl
+
+theorem State.set_other (s : State) (k : Nat) (ws : List UInt32) (h : 12 ≤ k) : s.set k ws = s := by
+  match k, h with
+  | k + 12, _ => rfl
+
+theorem Item.ops_eq (prev : Option Gradient) (i : Item) :
+    i.ops prev = [.uniform 0 i.state.slope, .uniform 1 i.state.offset, .uniform 2 i.state.size,
+      .uniform 3 i.state.view, .uniform 4 i.state.colour] ++ i.state.grad.ops prev ++
+      [.scissor i.state.scissor, .draw i.handle (i.words.length / i.state.stride) i.state.stride] := rfl
 
 theorem Tile.items_eq (tess : Scene.Command → List UInt32) (t : Tile) :
     t.items tess = t.list.paintOrder.map fun c => (tess c, t.stateOf c) := rfl

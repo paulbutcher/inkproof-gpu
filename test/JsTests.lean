@@ -2,7 +2,9 @@
 Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
+import Lean.Data.Json
 import Inkproof.Gpu
+import Inkproof.Scene.DisplayList
 
 open Inkproof.Gpu
 
@@ -96,6 +98,66 @@ console.log(JSON.stringify(px));"
   IO.eprint out.stderr
   return out.exitCode == 0 && out.stdout.trimAscii.toString == expected
 
+/-- Runs a frame of `list` on a `w` by `h` canvas in headless Chromium and reads back every pixel as rows from the top, each pixel red, green, blue and alpha. -/
+def renders (dir : System.FilePath) (w h : Nat) (list : Inkproof.Scene.DisplayList) :
+    IO (Option (Array Nat)) := do
+  IO.FS.writeFile (dir / "gpu.mjs") js
+  let bytes := ", ".intercalate ((frameBytes w h list ⟨255, 255, 255, 255⟩).data.toList.map (toString ·.toNat))
+  let script := s!"import \{ chromium } from \"playwright\";
+import \{ readFileSync } from \"node:fs\";
+const browser = await chromium.launch();
+const page = await browser.newPage();
+await page.setContent(\"<canvas id=c width={w} height={h}></canvas>\");
+const src = readFileSync(\"{dir / "gpu.mjs"}\", \"utf8\");
+const px = await page.evaluate(async (\{ src, bytes }) => \{
+  const gpu = await import(URL.createObjectURL(new Blob([src], \{ type: \"text/javascript\" })));
+  const gl = document.getElementById(\"c\").getContext(\"webgl2\", \{ preserveDrawingBuffer: true });
+  const state = gpu.newState();
+  gpu.run(gl, state, new Uint8Array(bytes));
+  const out = new Uint8Array({w} * {h} * 4);
+  gl.readPixels(0, 0, {w}, {h}, gl.RGBA, gl.UNSIGNED_BYTE, out);
+  return gl.getError() === 0 ? Array.from(out) : [];
+}, \{ src, bytes: [{bytes}] });
+await browser.close();
+console.log(JSON.stringify(px));"
+  let out ← IO.Process.output { cmd := "node", args := #["--input-type=module", "-e", script] }
+  IO.eprint out.stderr
+  if out.exitCode != 0 then return none
+  match Lean.Json.parse out.stdout with
+  | .ok (.arr a) =>
+    let vs := a.filterMap fun j => (j.getNat?).toOption
+    -- readPixels counts rows from the bottom.
+    let rows := (List.range h).reverse.flatMap fun r => (vs.toList.drop (r * w * 4)).take (w * 4)
+    return if vs.size == w * h * 4 then some rows.toArray else none
+  | _ => return none
+
+open Inkproof.Scene in
+/-- A display list of gradient and flat commands that overlap, on a 32 by 8 target. -/
+def gradientList : DisplayList :=
+  #[⟨0, .gradient .x ⟨4, ⟨255, 0, 0, 255⟩⟩ [⟨33 / 2, ⟨0, 255, 0, 255⟩⟩, ⟨28, ⟨0, 0, 255, 255⟩⟩],
+      .rect ⟨0, 0, 32, 8⟩⟩,
+    ⟨1, .gradient .y ⟨1, ⟨255, 255, 0, 255⟩⟩ [⟨7, ⟨0, 0, 0, 255⟩⟩], .rect ⟨8, 2, 24, 7⟩⟩,
+    ⟨2, .flat ⟨255, 0, 255, 255⟩, .rect ⟨0, 0, 4, 2⟩⟩]
+
+open Inkproof.Scene in
+/-- The colour that Scene's raster model gives a pixel: that of the last command whose rectangle holds it. -/
+def expectedPixel (list : DisplayList) (col row : Nat) : Color :=
+  list.toList.foldl (fun acc c =>
+    match c.shape with
+    | .rect b =>
+      if b.x0 ≤ col ∧ (col : Rat) < b.x1 ∧ b.y0 ≤ row ∧ (row : Rat) < b.y1
+      then c.color.at ⟨col, row⟩ else acc
+    | _ => acc) ⟨255, 255, 255, 255⟩
+
+/-- Whether every pixel of the render is within `tol` of the colour Scene's raster model gives it. -/
+def matchesModel (list : Inkproof.Scene.DisplayList) (w tol : Nat) (px : Array Nat) : Bool :=
+  (List.range px.size).all fun i =>
+    let p := i / 4
+    let want := expectedPixel list (p % w) (p / w)
+    let want := [want.r, want.g, want.b, want.a][i % 4]!.toNat
+    let got := px[i]!
+    (if got ≥ want then got - want else want - got) ≤ tol
+
 /-- Builds `Browser.lean` for the browser and runs it in headless Chromium, where the stack is far shallower than under node. -/
 def encodesInBrowser (dir : System.FilePath) : IO Bool := do
   let out := dir / "browser"
@@ -147,6 +209,11 @@ def main : IO UInt32 := do
     return ← fail "scissor excludes the centre"
   if !(← drawsTriangle dir (scissored triangle [4, 4, 8, 8]) "{\"px\":[255,0,0,255],\"err\":0,\"released\":true}") then
     return ← fail "scissor keeps the centre"
+  match ← renders dir 32 8 gradientList with
+  | some px =>
+    if !matchesModel gradientList 32 1 px then
+      return ← fail "gradient fills match the raster model to 1 in 255 in headless Chromium"
+  | none => return ← fail "gradient frame rendered in headless Chromium"
   if !(← encodesInBrowser dir) then
     return ← fail "a frame of 40000 commands under Lasm in headless Chromium"
   for (name, text) in [("gpu.js", js), ("vertex.glsl", vertexShader.glsl),

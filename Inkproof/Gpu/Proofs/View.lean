@@ -244,11 +244,13 @@ private theorem compile_cached_head (tess : Scene.Command → List UInt32) (c' :
       rcases hx with hx | hx
       · exact absurd hxu (hops x hx)
       · exact ⟨_, hx⟩
-  simp only [compile, List.foldl_cons, List.foldl_nil, List.mem_append, List.mem_flatMap] at ho
-  rcases ho with ho | ⟨i, _, ho⟩
+  simp only [compile, List.foldl_cons, List.foldl_nil, List.mem_append] at ho
+  rcases ho with ho | ho
   · exact h2 o ho hu
-  · simp only [Item.ops, List.mem_cons, List.not_mem_nil, or_false] at ho
-    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> simp [Op.IsUpload] at hu
+  · obtain ⟨i, _, ho⟩ := mem_itemsOps _ _ _ ho
+    simp only [Item.ops_none, List.mem_cons, List.not_mem_nil, or_false] at ho
+    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      simp [Op.IsUpload] at hu
 
 
 /-- A frame of the same list under another view, with any overlay, uploads only buffers of the overlay's vertices: the list's are not uploaded again. -/
