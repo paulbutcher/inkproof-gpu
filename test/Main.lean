@@ -106,22 +106,28 @@ def shaderPixels (w h : Nat) (st : State) (words : List UInt32) : List (Float ×
       some ((x.toFloat + 1) / 2 * w.toFloat, (1 - y.toFloat) / 2 * h.toFloat)
     | _ => none
 
-/-- The corners of the rectangle of half width `hw` about the segment from `a` to `b` in pixels, with square caps, computed exactly. -/
+/-- The corners of the rectangle of half width `hw` about the segment from `a` to `b` in pixels, computed exactly. -/
 def segCorners (hw : Float) (a b : Float × Float) : List (Float × Float) :=
   let dx := b.1 - a.1
   let dy := b.2 - a.2
   let len := Float.sqrt (dx * dx + dy * dy)
   let (tx, ty) := if len == 0 then (1.0, 0.0) else (dx / len, dy / len)
-  [(a.1 - hw * tx - hw * ty, a.2 - hw * ty + hw * tx), (a.1 - hw * tx + hw * ty, a.2 - hw * ty - hw * tx),
-   (b.1 + hw * tx - hw * ty, b.2 + hw * ty + hw * tx), (b.1 + hw * tx + hw * ty, b.2 + hw * ty - hw * tx)]
+  [(a.1 - hw * ty, a.2 + hw * tx), (a.1 + hw * ty, a.2 - hw * tx),
+   (b.1 - hw * ty, b.2 + hw * tx), (b.1 + hw * ty, b.2 - hw * tx)]
+
+/-- The corners of the octagon of circumradius `hw / cos (π / 8)` about `c`, with edges parallel to the axes and diagonals. -/
+def octagonCorners (hw : Float) (c : Float × Float) : List (Float × Float) :=
+  let k := 0.41421356 * hw
+  [(c.1 + hw, c.2 - k), (c.1 + hw, c.2 + k), (c.1 + k, c.2 + hw), (c.1 - k, c.2 + hw),
+   (c.1 - hw, c.2 + k), (c.1 - hw, c.2 - k), (c.1 - k, c.2 - hw), (c.1 + k, c.2 - hw)]
 
 open Inkproof.Scene in
-/-- The corners of a strip's segments, as in the strip's triangles. -/
+/-- The corners of a strip's segments and of the octagons about its values. -/
 def stripCorners (hw : Float) : List (Item (Float × Float)) → List (Float × Float)
   | [] => []
   | .gap :: rest => stripCorners hw rest
   | .val a :: rest =>
-    segCorners hw a a ++
+    octagonCorners hw a ++
       (match rest with
         | .val b :: _ => segCorners hw a b
         | _ => []) ++ stripCorners hw rest
@@ -142,13 +148,38 @@ def within (ps qs : List (Float × Float)) : Bool :=
   ps.all fun p => qs.any fun q => (p.1 - q.1).abs ≤ 0.5 && (p.2 - q.2).abs ≤ 0.5
 
 open Inkproof.Scene in
-/-- The vertices of the shader's triangles agree to half a pixel with the corners of the shapes in pixels. A strip is exact, where Scene's triangles for a strip are a little wider. -/
+/-- The vertices of the shader's triangles agree to half a pixel with the corners of the shapes in pixels. A strip is exact: Scene's triangles for a strip have square caps and are wider. -/
 def strokeAgrees (w h : Nat) (v : View) : Bool :=
   let tile := viewTile w h v strokePlot strokeList
   tile.list.paintOrder.all fun c =>
     let got := shaderPixels w h (tile.stateOf c) (tessellateStroke ⟨0, 0⟩ c)
     let want := pixelCorners v strokePlot (match c.shape with | .clipped _ s => s | s => s)
     !got.isEmpty && within got want && within want got
+
+/-- The distance from `p` to the segment from `a` to `b`. -/
+def segDist (p a b : Float × Float) : Float :=
+  let dx := b.1 - a.1
+  let dy := b.2 - a.2
+  let l2 := dx * dx + dy * dy
+  let t := if l2 == 0 then 0.0 else max 0.0 (min 1.0 (((p.1 - a.1) * dx + (p.2 - a.2) * dy) / l2))
+  let ex := p.1 - (a.1 + t * dx)
+  let ey := p.2 - (a.2 + t * dy)
+  Float.sqrt (ex * ex + ey * ey)
+
+open Inkproof.Scene in
+/-- Every vertex of a strip's triangles is within `hw / cos (π / 8)` of the strip's polyline, so the strip is no wider than the thickened polyline by more than about 8% of its half width. -/
+def stripWithinJoins (w h : Nat) (v : View) (hw : Rat) (items : List (Item Pt)) : Bool :=
+  let cmd : Command := ⟨0, .flat ⟨0, 0, 0, 255⟩, .strip hw items⟩
+  let tile := viewTile w h v strokePlot #[cmd]
+  let px : List (Item (Float × Float)) := items.map fun
+    | .val p => .val (ratToFloat ((viewX v strokePlot).apply p.x), ratToFloat ((viewY v strokePlot).apply p.y))
+    | .gap => .gap
+  let pts := px.filterMap fun | .val p => some p | .gap => none
+  let segs := (Item.runs px).flatMap fun r => r.zip (r.drop 1)
+  let bound := ratToFloat hw * 1.0825 + 0.01
+  let got := shaderPixels w h (tile.stateOf cmd) (tessellateStroke ⟨0, 0⟩ cmd)
+  !got.isEmpty && got.all fun p =>
+    (pts.any fun a => segDist p a a ≤ bound) || segs.any fun (a, b) => segDist p a b ≤ bound
 
 def main (args : List String) : IO UInt32 :=
   runTests [
@@ -166,6 +197,9 @@ def main (args : List String) : IO UInt32 :=
       let (c, _) := compile tess {} (tiles 0)
       let (_, ops) := compile tess c (tiles 5)
       check (!ops.any isUpload && drawHandles ops == [0, 1, 2]) "uploaded again"⟩,
+    ⟨"a strip does not protrude past round joins and caps by more than a tenth of its half width",
+      check (strokeViews.all fun v => stripWithinJoins 500 400 v 1 [.val ⟨1, 40⟩, .val ⟨3, 80⟩, .val ⟨5, 40⟩, .val ⟨5, 40⟩, .gap, .val ⟨7, 60⟩])
+        "protrudes"⟩,
     ⟨"changed tile content is uploaded and the stale buffers deleted",
       let (c, _) := compile tess {} (tiles 0)
       let (_, ops) := compile tess c [⟨#[cmd 3 9], [0], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩⟩]

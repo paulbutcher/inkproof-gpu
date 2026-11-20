@@ -85,20 +85,10 @@ def triWords (origin : Pt) (t : Tri) : List UInt32 :=
 def tessellate (origin : Pt) (c : Command) : List UInt32 :=
   ((triangles c.shape).map (triWords origin)).flatten
 
-/-- The two triangles of the rectangle about the segment from `a` to `b`, with square caps, as stroke vertices that sit at `a` or `b`. -/
+/-- The two triangles of the rectangle about the segment from `a` to `b`, with no extension past its ends, as stroke vertices that sit at `a` or `b`. -/
 def segVertices (a b : Pt) : List Vtx :=
   let d := a.dir b
-  [⟨a, d, -1, -1⟩, ⟨b, d, 1, -1⟩, ⟨a, d, -1, 1⟩, ⟨b, d, 1, 1⟩, ⟨a, d, -1, 1⟩, ⟨b, d, 1, -1⟩]
-
-/-- The vertices of a strip: those of each segment between adjacent values, and of each value itself, so that a value with no neighbour is still drawn, as in `stripTriangles`. -/
-def stripVertices : List (Item Pt) → List Vtx
-  | [] => []
-  | .gap :: rest => stripVertices rest
-  | .val a :: rest =>
-    segVertices a a ++
-      (match rest with
-        | .val b :: _ => segVertices a b
-        | _ => []) ++ stripVertices rest
+  [⟨a, d, 0, -1⟩, ⟨b, d, 0, -1⟩, ⟨a, d, 0, 1⟩, ⟨b, d, 0, 1⟩, ⟨a, d, 0, 1⟩, ⟨b, d, 0, -1⟩]
 
 /-- The vertices of the square marker about `c`, with the corner as its offset in units of the radius. -/
 def squareVertices (c : Pt) : List Vtx :=
@@ -113,6 +103,16 @@ def octagonVertices (c : Pt) : List Vtx :=
   let ring := v ++ v.take 1
   (ring.zip (ring.drop 1)).flatMap fun (a, b) =>
     [⟨c, ⟨1, 0⟩, 0, 0⟩, ⟨c, ⟨1, 0⟩, a.1, a.2⟩, ⟨c, ⟨1, 0⟩, b.1, b.2⟩]
+
+/-- The vertices of a strip: an octagon about each value, which contains the disc that Scene's round joins and caps make, and the rectangle about each segment between adjacent values. Each octagon corner is `1 / cos (π / 8)`, about 1.082, times the half width from its value, so the strip is never more than about 8% of its half width wider than the thickened polyline. -/
+def stripVertices : List (Item Pt) → List Vtx
+  | [] => []
+  | .gap :: rest => stripVertices rest
+  | .val a :: rest =>
+    octagonVertices a ++
+      (match rest with
+        | .val b :: _ => segVertices a b
+        | _ => []) ++ stripVertices rest
 
 /-- The vertices that cover a shape when drawn by the vertex shader at its stroke size, which `strokeSize` gives. A strip or a marker is described apart from its size, so the vertices are the same in every view; the other shapes are as in `triangles`. -/
 def strokeVertices : Shape → List Vtx

@@ -314,20 +314,20 @@ theorem strokeVertices_square (c : Pt) (r : Rat) :
 theorem strokeVertices_circle (c : Pt) (r : Rat) :
     strokeVertices (.marker .circle c r) = octagonVertices c := rfl
 
-/-- A segment is the two triangles of the rectangle about it: four corners at its ends, each end twice or once. -/
+/-- A segment is the two triangles of the rectangle about it: four corners at its ends, each end twice or once, with no extension along it. -/
 theorem segVertices_eq (a b : Pt) :
-    segVertices a b = [⟨a, a.dir b, -1, -1⟩, ⟨b, a.dir b, 1, -1⟩, ⟨a, a.dir b, -1, 1⟩,
-      ⟨b, a.dir b, 1, 1⟩, ⟨a, a.dir b, -1, 1⟩, ⟨b, a.dir b, 1, -1⟩] := rfl
+    segVertices a b = [⟨a, a.dir b, 0, -1⟩, ⟨b, a.dir b, 0, -1⟩, ⟨a, a.dir b, 0, 1⟩,
+      ⟨b, a.dir b, 0, 1⟩, ⟨a, a.dir b, 0, 1⟩, ⟨b, a.dir b, 0, -1⟩] := rfl
 
 theorem stripVertices_nil : stripVertices [] = [] := rfl
 
 theorem stripVertices_gap (rest : List (Item Pt)) : stripVertices (.gap :: rest) = stripVertices rest := rfl
 
 theorem stripVertices_val_last (a : Pt) :
-    stripVertices [.val a] = segVertices a a := by simp [stripVertices]
+    stripVertices [.val a] = octagonVertices a := by simp [stripVertices]
 
 theorem stripVertices_val_val (a b : Pt) (rest : List (Item Pt)) :
     stripVertices (.val a :: .val b :: rest) =
-      segVertices a a ++ segVertices a b ++ stripVertices (.val b :: rest) := rfl
+      octagonVertices a ++ segVertices a b ++ stripVertices (.val b :: rest) := rfl
 
 end Inkproof.Gpu
