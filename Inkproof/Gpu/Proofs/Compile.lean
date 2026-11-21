@@ -615,6 +615,36 @@ theorem Gradient.ofStops_short (o : Scene.Pt) (a : Scene.GradientAxis) (s : Scen
     omega
   all_goals simp only [hz]; omega
 
+theorem Gradient.ofSteps_short (o : Scene.Pt) (a : Scene.GradientAxis) (s : Scene.Stop) (rest : List Scene.Stop)
+    (h : rest.length ≤ gradientSegments) : (Gradient.ofSteps o a s rest).Short := by
+  have hz : ∀ i : Nat, (((((s :: rest).zip rest)[i]?).map fun (p : Scene.Stop × Scene.Stop) =>
+      deltaWords p.1.color p.2.color).getD [0, 0, 0, 0]).length = 4 := by
+    intro i
+    cases hg : ((s :: rest).zip rest)[i]? <;> simp [deltaWords]
+  have hl : ((s :: rest).zip rest).length = rest.length := by simp
+  simp only [Gradient.ofSteps, Gradient.Short]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · cases a <;> simp
+  · simp only [List.length_append, List.length_map, List.length_replicate, hl]
+    have : gradientSegments = 4 := rfl
+    omega
+  · simp only [List.length_append, List.length_map, List.length_replicate, hl]
+    have : gradientSegments = 4 := rfl
+    omega
+  all_goals simp only [hz]; omega
+
+/-- Steps that the renderer can draw have the first stop's colour as their base. -/
+theorem shadingState_steps (o : Scene.Pt) (a : Scene.GradientAxis) (s : Scene.Stop) (rest : List Scene.Stop)
+    (hn : rest.length ≤ gradientSegments) (hs : stopsAscend (s :: rest) = true) :
+    shadingState o (.steps a s rest) = some (s.color, .ofSteps o a s rest) := by
+  simp [shadingState, hn, hs]
+
+/-- Steps with more than `gradientSegments` changes, or with stops that descend, are not drawn. -/
+theorem shadingState_steps_unsupported (o : Scene.Pt) (a : Scene.GradientAxis) (s : Scene.Stop) (rest : List Scene.Stop)
+    (h : ¬ (rest.length ≤ gradientSegments ∧ stopsAscend (s :: rest) = true)) :
+    shadingState o (.steps a s rest) = none := by
+  simp [shadingState, h]
+
 theorem shadingState_short (o : Scene.Pt) (sh : Scene.Shading) (k : Scene.Color) (g : Gradient)
     (h : shadingState o sh = some (k, g)) : g.Short := by
   cases sh with
@@ -622,6 +652,10 @@ theorem shadingState_short (o : Scene.Pt) (sh : Scene.Shading) (k : Scene.Color)
   | gradient a s rest =>
     by_cases hc : rest.length ≤ gradientSegments ∧ stopsAscend (s :: rest) = true
     · simp [shadingState, hc] at h; rw [← h.2]; exact Gradient.ofStops_short o a s rest hc.1
+    · simp [shadingState, hc] at h
+  | steps a s rest =>
+    by_cases hc : rest.length ≤ gradientSegments ∧ stopsAscend (s :: rest) = true
+    · simp [shadingState, hc] at h; rw [← h.2]; exact Gradient.ofSteps_short o a s rest hc.1
     · simp [shadingState, hc] at h
 
 /-- A flat shading is drawn in its colour with a gradient that changes nothing. -/

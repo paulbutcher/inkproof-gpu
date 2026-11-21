@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.14.0]
+
+- Draws `Shading.steps`: `Gradient.ofSteps` and `shadingState` give hard-edged colour changes at each stop, for fills and strokes.
+- Builds against Scene v0.22.0.
+
 ## [0.13.0]
 
 - Strips from `tessellateStroke` have round joins and caps, so no square corners protrude at vertices.

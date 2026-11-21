@@ -158,4 +158,12 @@ theorem Gradient.ofStops_first (o : Pt) (s n : Stop) (rest : List Stop) :
     (Gradient.ofStops o .x s (n :: rest)).d0 = deltaWords s.color n.color := by
   refine ⟨?_, ?_, ?_⟩ <;> simp [Gradient.ofStops]
 
+/-- The first step starts just before the second stop's position relative to the tile origin, has no length, and changes the colour by the difference between the first two stops. -/
+theorem Gradient.ofSteps_first (o : Pt) (s n : Stop) (rest : List Stop) :
+    ((Gradient.ofSteps o .x s (n :: rest)).starts.head? =
+      some (ratToFloat32 (n.pos - o.x - stepLead)).toBits) ∧
+    ((Gradient.ofSteps o .x s (n :: rest)).invs.head? = some stepInv) ∧
+    (Gradient.ofSteps o .x s (n :: rest)).d0 = deltaWords s.color n.color := by
+  refine ⟨?_, ?_, ?_⟩ <;> simp [Gradient.ofSteps]
+
 end Inkproof.Gpu

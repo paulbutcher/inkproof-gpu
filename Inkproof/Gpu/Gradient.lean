@@ -49,16 +49,34 @@ def Gradient.ofStops (o : Pt) (axis : GradientAxis) (s : Stop) (rest : List Stop
       if a.pos = b.pos then stepInv else (ratToFloat32 (1 / (b.pos - a.pos))).toBits)
     d0 := delta 0, d1 := delta 1, d2 := delta 2, d3 := delta 3 }
 
+/-- How far before a step's position its weight is already one, so that a pixel centre exactly at the position takes the new colour as `evalSteps` does: the weight is a step at the position less this, and the colour of a centre that close before the position, which no pixel centre is for positions on the half-pixel grid, is the new one. -/
+def stepLead : Rat := 1 / 4096
+
+/-- The uniforms of the steps along `axis` through the stops `s :: rest`: each stop after the first is a step of no length that changes the colour from the previous stop's to its own, at its position relative to the tile origin. The stops must have at most `gradientSegments + 1` and ascend. -/
+def Gradient.ofSteps (o : Pt) (axis : GradientAxis) (s : Stop) (rest : List Stop) : Gradient :=
+  let segs := (s :: rest).zip rest
+  let rel (p : Rat) : Rat := match axis with | .x => p - o.x | .y => p - o.y
+  let pad (ws : List UInt32) : List UInt32 := ws ++ List.replicate (gradientSegments - ws.length) 0
+  let delta (i : Nat) : List UInt32 :=
+    (segs[i]?.map fun (a, b) => deltaWords a.color b.color).getD [0, 0, 0, 0]
+  { axis := match axis with | .x => [(1 : Float32).toBits, 0] | .y => [0, (1 : Float32).toBits]
+    starts := pad (segs.map fun (_, b) => (ratToFloat32 (rel b.pos - stepLead)).toBits)
+    invs := pad (segs.map fun _ => stepInv)
+    d0 := delta 0, d1 := delta 1, d2 := delta 2, d3 := delta 3 }
+
 /-- Whether stops ascend, adjacent ones possibly sharing a position. -/
 def stopsAscend : List Stop → Bool
   | a :: b :: rest => decide (a.pos ≤ b.pos) && stopsAscend (b :: rest)
   | _ => true
 
-/-- The colour at the first stop and the gradient of a shading, relative to the tile origin `o`; `none` for a gradient that the renderer cannot draw, which has too many stops or stops that descend. -/
+/-- The colour at the first stop and the gradient of a shading, relative to the tile origin `o`; `none` for a gradient or steps that the renderer cannot draw, which have too many stops or stops that descend. -/
 def shadingState (o : Pt) : Shading → Option (Color × Gradient)
   | .flat c => some (c, .flat)
   | .gradient axis s rest =>
     if rest.length ≤ gradientSegments ∧ stopsAscend (s :: rest) = true
     then some (s.color, .ofStops o axis s rest) else none
+  | .steps axis s rest =>
+    if rest.length ≤ gradientSegments ∧ stopsAscend (s :: rest) = true
+    then some (s.color, .ofSteps o axis s rest) else none
 
 end Inkproof.Gpu

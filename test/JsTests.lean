@@ -140,6 +140,13 @@ def gradientList : DisplayList :=
     ⟨2, .flat ⟨255, 0, 255, 255⟩, .rect ⟨0, 0, 4, 2⟩⟩]
 
 open Inkproof.Scene in
+/-- Steps along x and y on a 32 by 8 target, with a stop at a pixel centre and another between two. -/
+def stepsList : DisplayList :=
+  #[⟨0, .steps .x ⟨4, ⟨255, 0, 0, 255⟩⟩ [⟨25 / 2, ⟨0, 255, 0, 255⟩⟩, ⟨20, ⟨0, 0, 255, 255⟩⟩],
+      .rect ⟨0, 0, 32, 8⟩⟩,
+    ⟨1, .steps .y ⟨1, ⟨255, 255, 0, 255⟩⟩ [⟨3, ⟨0, 0, 0, 255⟩⟩], .rect ⟨24, 0, 32, 8⟩⟩]
+
+open Inkproof.Scene in
 /-- The colour that Scene's raster model gives a pixel: that of the last command whose rectangle holds it. -/
 def expectedPixel (list : DisplayList) (col row : Nat) : Color :=
   list.toList.foldl (fun acc c =>
@@ -249,6 +256,11 @@ def main : IO UInt32 := do
     if !matchesModel gradientList 32 1 px then
       return ← fail "gradient fills match the raster model to 1 in 255 in headless Chromium"
   | none => return ← fail "gradient frame rendered in headless Chromium"
+  match ← renders dir 32 8 stepsList with
+  | some px =>
+    if !matchesModel stepsList 32 1 px then
+      return ← fail "steps fills match the raster model to 1 in 255 in headless Chromium"
+  | none => return ← fail "steps frame rendered in headless Chromium"
   match ← renders dir 12 2 translucentList with
   | some px =>
     if !mixesTranslucent px then
