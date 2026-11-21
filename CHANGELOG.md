@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.16.0]
+
+- Removes `clamp01`; the gradient proofs use `Float.clamp 0 1` from inkproof-float.
+
 ## [0.15.0]
 
 - Turns the octagon at each strip value to its segment's direction (`octagonVertices` takes a direction, `stripVerticesFrom` is new), so a thin vertical or horizontal stroke has no foot at its end.

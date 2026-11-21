@@ -2,21 +2,26 @@
 Copyright (c) 2026 Paul Butcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
+import Inkproof.Float.RatLemmas
 import Inkproof.Gpu.Gradient
 
 namespace Inkproof.Gpu
 
 open Scene
 
-/-- A fraction clamped to 0 to 1, as the fragment shader's `clamp` does. -/
-def clamp01 (x : Rat) : Rat := if x ≤ 0 then 0 else if 1 ≤ x then 1 else x
-
-/-- What one channel of the stops adds to the first stop's, in exact arithmetic as the fragment shader does: each segment adds the change in the channel across it, scaled by how far `t` is along it, clamped to 0 to 1. -/
+/-- What one channel of the stops adds to the first stop's, in exact arithmetic as the fragment shader does: each segment adds the change in the channel across it, scaled by how far `t` is along it, clamped to 0 to 1 as the shader's `clamp` does. -/
 def deltaSum (f : Color → UInt8) (t : Rat) : Stop → List Stop → Rat
   | _, [] => 0
   | s, n :: rest =>
-    (((f n.color).toNat : Rat) - (f s.color).toNat) * clamp01 ((t - s.pos) / (n.pos - s.pos)) +
+    (((f n.color).toNat : Rat) - (f s.color).toNat) * Float.clamp 0 1 ((t - s.pos) / (n.pos - s.pos)) +
       deltaSum f t n rest
+
+theorem deltaSum_nil (f : Color → UInt8) (t : Rat) (s : Stop) : deltaSum f t s [] = 0 := rfl
+
+theorem deltaSum_cons (f : Color → UInt8) (t : Rat) (s n : Stop) (rest : List Stop) :
+    deltaSum f t s (n :: rest) =
+      (((f n.color).toNat : Rat) - (f s.color).toNat) * Float.clamp 0 1 ((t - s.pos) / (n.pos - s.pos)) +
+        deltaSum f t n rest := rfl
 
 private theorem lerpChannel_close (a b : UInt8) {w : Rat} (h0 : 0 ≤ w) (h1 : w ≤ 1) :
     (lerpChannel a b w).toNat - ((a.toNat : Rat) + ((b.toNat : Rat) - a.toNat) * w) ≤ 1 / 2 ∧
@@ -57,26 +62,20 @@ private theorem le_div_of_le (x d y : Rat) (hd : 0 < d) (h : y * d ≤ x) : y �
   rw [Rat.div_def]; exact this
 
 /-- Before the start of a segment the clamped fraction is 0, and after its end it is 1. -/
-private theorem clamp01_before (x d : Rat) (hd : 0 < d) (h : x ≤ 0) : clamp01 (x / d) = 0 := by
+private theorem clamp_before (x d : Rat) (hd : 0 < d) (h : x ≤ 0) : Float.clamp 0 1 (x / d) = 0 := by
   have : x / d ≤ 0 := div_le_of_le x d 0 hd (by grind)
-  simp [clamp01, this]
+  unfold Float.clamp; grind
 
-private theorem clamp01_after (x d : Rat) (hd : 0 < d) (h : d ≤ x) : clamp01 (x / d) = 1 := by
+private theorem clamp_after (x d : Rat) (hd : 0 < d) (h : d ≤ x) : Float.clamp 0 1 (x / d) = 1 := by
   have : 1 ≤ x / d := le_div_of_le x d 1 hd (by grind)
-  have h0 : ¬ x / d ≤ 0 := by grind
-  simp [clamp01, h0, this]
+  unfold Float.clamp; grind
 
-private theorem clamp01_between (x d : Rat) (hd : 0 < d) (h0 : 0 < x) (h1 : x ≤ d) :
-    clamp01 (x / d) = x / d ∧ 0 ≤ x / d ∧ x / d ≤ 1 := by
+private theorem clamp_between (x d : Rat) (hd : 0 < d) (h0 : 0 < x) (h1 : x ≤ d) :
+    Float.clamp 0 1 (x / d) = x / d ∧ 0 ≤ x / d ∧ x / d ≤ 1 := by
   have a : x / d ≤ 1 := div_le_of_le x d 1 hd (by grind)
   have b : 0 ≤ x / d := le_div_of_le x d 0 hd (by grind)
-  have c : 0 < x / d := by
-    rw [Rat.div_def]; exact Rat.mul_pos h0 (Rat.inv_pos.mpr hd)
-  have n1 : ¬ x / d ≤ 0 := by grind
   refine ⟨?_, b, a⟩
-  by_cases e : 1 ≤ x / d
-  · simp only [clamp01, n1, e, ite_false, ite_true]; grind
-  · simp [clamp01, n1, e]
+  unfold Float.clamp; grind
 
 private theorem deltaSum_before (f : Color → UInt8) (t : Rat) :
     ∀ (rest : List Stop) (s : Stop), (s :: rest).Pairwise (·.pos < ·.pos) → t ≤ s.pos →
@@ -88,8 +87,8 @@ private theorem deltaSum_before (f : Color → UInt8) (t : Rat) :
     intro s hs ht
     have hsn : s.pos < n.pos := (List.pairwise_cons.1 hs).1 n (by simp)
     have hr := (List.pairwise_cons.1 hs).2
-    have h1 : clamp01 ((t - s.pos) / (n.pos - s.pos)) = 0 :=
-      clamp01_before _ _ (by grind) (by grind)
+    have h1 : Float.clamp 0 1 ((t - s.pos) / (n.pos - s.pos)) = 0 :=
+      clamp_before _ _ (by grind) (by grind)
     simp only [deltaSum, h1, Rat.mul_zero, Rat.zero_add]
     exact ih n hr (by grind)
 
@@ -107,18 +106,18 @@ theorem evalStops_close (f : Color → UInt8)
     have hsn : s.pos < n.pos := (List.pairwise_cons.1 hs).1 n (by simp)
     have hr := (List.pairwise_cons.1 hs).2
     by_cases h0 : t ≤ s.pos
-    · have h1 : clamp01 ((t - s.pos) / (n.pos - s.pos)) = 0 :=
-        clamp01_before _ _ (by grind) (by grind)
+    · have h1 : Float.clamp 0 1 ((t - s.pos) / (n.pos - s.pos)) = 0 :=
+        clamp_before _ _ (by grind) (by grind)
       have h2 := deltaSum_before f t rest n hr (by grind)
       simp only [evalStops, h0, ite_true, deltaSum, h1, h2, Rat.mul_zero]; grind
     · by_cases h1 : t ≤ n.pos
-      · obtain ⟨hc, hw0, hw1⟩ := clamp01_between (t - s.pos) (n.pos - s.pos) (by grind) (by grind) (by grind)
+      · obtain ⟨hc, hw0, hw1⟩ := clamp_between (t - s.pos) (n.pos - s.pos) (by grind) (by grind) (by grind)
         have h2 := deltaSum_before f t rest n hr h1
         have h3 := lerpChannel_close (f s.color) (f n.color) hw0 hw1
         simp only [evalStops, h0, h1, ite_false, ite_true, hf, deltaSum, hc, h2, Rat.add_zero]
         exact h3
-      · have h2 : clamp01 ((t - s.pos) / (n.pos - s.pos)) = 1 :=
-          clamp01_after _ _ (by grind) (by grind)
+      · have h2 : Float.clamp 0 1 ((t - s.pos) / (n.pos - s.pos)) = 1 :=
+          clamp_after _ _ (by grind) (by grind)
         have := ih n hr t
         simp only [evalStops, h0, h1, ite_false, deltaSum, h2, Rat.mul_one]
         grind

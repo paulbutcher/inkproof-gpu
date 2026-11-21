@@ -279,7 +279,6 @@ theorem Inkproof.Gpu.box_sub_boxTriangles : ∀ {x0 y0 x1 y1 : Rat} {p : Inkproo
 theorem Inkproof.Gpu.cached_eq_fresh : ∀ (tess : Inkproof.Scene.Command → List UInt32) (c : Inkproof.Gpu.Cache) (tiles : List Inkproof.Gpu.Tile) (g : Inkproof.Gpu.Gpu), c.Valid g → (g.run (Inkproof.Gpu.compile tess c tiles).snd).log = g.log ++ Inkproof.Gpu.frameDraws tess tiles ∧ (Inkproof.Gpu.Gpu.empty.run (Inkproof.Gpu.compile tess { } tiles).snd).log = Inkproof.Gpu.frameDraws tess tiles
 def Inkproof.Gpu.chainTriangles : {α : Type} → (α → List Inkproof.Scene.Tri) → (α → α → List Inkproof.Scene.Tri) → List (Inkproof.Scene.Item α) → List Inkproof.Scene.Tri
 theorem Inkproof.Gpu.chain_sub_chainTriangles : ∀ {α : Type} {single : α → Inkproof.Scene.Region} {join : α → α → Inkproof.Scene.Region} {ts : α → List Inkproof.Scene.Tri} {tj : α → α → List Inkproof.Scene.Tri}, (∀ (a : α) (p : Inkproof.Scene.Pt), single a p → ∃ t, t ∈ ts a ∧ t.region p) → (∀ (a b : α) (p : Inkproof.Scene.Pt), join a b p → ∃ t, t ∈ tj a b ∧ t.region p) → ∀ (items : List (Inkproof.Scene.Item α)) (p : Inkproof.Scene.Pt), Inkproof.Scene.Item.chain single join items p → ∃ t, t ∈ Inkproof.Gpu.chainTriangles ts tj items ∧ t.region p
-def Inkproof.Gpu.clamp01 : Rat → Rat
 def Inkproof.Gpu.clearWord : Inkproof.Scene.Color → UInt32
 theorem Inkproof.Gpu.clearWord_toNat : ∀ (c : Inkproof.Scene.Color), (Inkproof.Gpu.clearWord c).toNat = c.r.toNat * 2 ^ 24 + c.g.toNat * 2 ^ 16 + c.b.toNat * 2 ^ 8 + c.a.toNat
 def Inkproof.Gpu.clipRect : Inkproof.Scene.Shape → Option (Option Inkproof.Scene.Rect)
@@ -310,6 +309,8 @@ theorem Inkproof.Gpu.decodeWords_flatMap : ∀ (ws : List UInt32) (r : List UInt
 theorem Inkproof.Gpu.decode_encode : ∀ {cs : List Inkproof.Gpu.Cmd}, (∀ (c : Inkproof.Gpu.Cmd), c ∈ cs → c.WellFormed) → cs.length < UInt32.size → Inkproof.Gpu.decode (Inkproof.Gpu.encode cs) = Option.some cs
 def Inkproof.Gpu.deletes : Nat → Nat → List Inkproof.Gpu.Op
 def Inkproof.Gpu.deltaSum : (Inkproof.Scene.Color → UInt8) → Rat → Inkproof.Scene.Stop → List Inkproof.Scene.Stop → Rat
+theorem Inkproof.Gpu.deltaSum_cons : ∀ (f : Inkproof.Scene.Color → UInt8) (t : Rat) (s n : Inkproof.Scene.Stop) (rest : List Inkproof.Scene.Stop), Inkproof.Gpu.deltaSum f t s (n :: rest) = (↑(f n.color).toNat - ↑(f s.color).toNat) * Inkproof.Float.clamp 0 1 ((t - s.pos) / (n.pos - s.pos)) + Inkproof.Gpu.deltaSum f t n rest
+theorem Inkproof.Gpu.deltaSum_nil : ∀ (f : Inkproof.Scene.Color → UInt8) (t : Rat) (s : Inkproof.Scene.Stop), Inkproof.Gpu.deltaSum f t s [] = 0
 def Inkproof.Gpu.deltaWords : Inkproof.Scene.Color → Inkproof.Scene.Color → List UInt32
 theorem Inkproof.Gpu.deltaWords_eq : ∀ (a b : Inkproof.Scene.Color), Inkproof.Gpu.deltaWords a b = List.map (fun x => match x with | (x, y) => (Inkproof.Gpu.ratToFloat32 (↑(↑y.toNat - ↑x.toNat) / 255)).toBits) [(a.r, b.r), (a.g, b.g), (a.b, b.b), (a.a, b.a)]
 theorem Inkproof.Gpu.deltaWords_length : ∀ (a b : Inkproof.Scene.Color), (Inkproof.Gpu.deltaWords a b).length = 4
