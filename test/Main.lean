@@ -115,27 +115,34 @@ def segCorners (hw : Float) (a b : Float × Float) : List (Float × Float) :=
   [(a.1 - hw * ty, a.2 + hw * tx), (a.1 + hw * ty, a.2 - hw * tx),
    (b.1 - hw * ty, b.2 + hw * tx), (b.1 + hw * ty, b.2 - hw * tx)]
 
-/-- The corners of the octagon of circumradius `hw / cos (π / 8)` about `c`, with edges parallel to the axes and diagonals. -/
-def octagonCorners (hw : Float) (c : Float × Float) : List (Float × Float) :=
-  let k := 0.41421356 * hw
-  [(c.1 + hw, c.2 - k), (c.1 + hw, c.2 + k), (c.1 + k, c.2 + hw), (c.1 - k, c.2 + hw),
-   (c.1 - hw, c.2 + k), (c.1 - hw, c.2 - k), (c.1 - k, c.2 - hw), (c.1 + k, c.2 - hw)]
+/-- The unit direction from `a` to `b`, along x when they coincide. -/
+def unitDir (a b : Float × Float) : Float × Float :=
+  let dx := b.1 - a.1
+  let dy := b.2 - a.2
+  let len := Float.sqrt (dx * dx + dy * dy)
+  if len == 0 then (1.0, 0.0) else (dx / len, dy / len)
+
+/-- The corners of the octagon of circumradius `hw / cos (π / 8)` about `c`, with edges parallel and perpendicular to the unit direction `t`, and diagonals. -/
+def octagonCorners (hw : Float) (c : Float × Float) (t : Float × Float) : List (Float × Float) :=
+  let k := 0.41421356
+  let corner := fun (u v : Float) => (c.1 + hw * (u * t.1 - v * t.2), c.2 + hw * (u * t.2 + v * t.1))
+  [corner 1 (-k), corner 1 k, corner k 1, corner (-k) 1, corner (-1) k, corner (-1) (-k), corner (-k) (-1), corner k (-1)]
 
 open Inkproof.Scene in
-/-- The corners of a strip's segments and of the octagons about its values. -/
-def stripCorners (hw : Float) : List (Item (Float × Float)) → List (Float × Float)
+/-- The corners of a strip's segments and of the octagons about its values, each turned to the direction of the segment that leaves its value, or arrives at the last. -/
+def stripCorners (hw : Float) (prev : Float × Float) : List (Item (Float × Float)) → List (Float × Float)
   | [] => []
-  | .gap :: rest => stripCorners hw rest
+  | .gap :: rest => stripCorners hw (1, 0) rest
   | .val a :: rest =>
-    octagonCorners hw a ++
-      (match rest with
-        | .val b :: _ => segCorners hw a b
-        | _ => []) ++ stripCorners hw rest
+    match rest with
+    | .val b :: _ =>
+      octagonCorners hw a (unitDir a b) ++ segCorners hw a b ++ stripCorners hw (unitDir a b) rest
+    | _ => octagonCorners hw a prev ++ stripCorners hw (1, 0) rest
 
 open Inkproof.Scene in
 /-- The corners of the shape in pixels under the view: those of a strip are exact, and the others are the corners of the triangles. -/
 def pixelCorners (v : View) (plot : Rect) : Shape → List (Float × Float)
-  | .strip hw items => stripCorners (ratToFloat hw) (items.map fun
+  | .strip hw items => stripCorners (ratToFloat hw) (1, 0) (items.map fun
       | .val p => .val (ratToFloat ((viewX v plot).apply p.x), ratToFloat ((viewY v plot).apply p.y))
       | .gap => .gap)
   | .marker k c r =>
@@ -181,6 +188,21 @@ def stripWithinJoins (w h : Nat) (v : View) (hw : Rat) (items : List (Item Pt)) 
   !got.isEmpty && got.all fun p =>
     (pts.any fun a => segDist p a a ≤ bound) || segs.any fun (a, b) => segDist p a b ≤ bound
 
+/-- The values in `xs` with duplicates removed. -/
+def distinctFloats (xs : List Float) : List Float :=
+  xs.foldl (fun acc x => if acc.contains x then acc else x :: acc) []
+
+open Inkproof.Scene in
+/-- A two point stroke has its vertices on five lines across it, its axis, its two edges and the two sides of the octagon between them, at both ends, so no end is wider than the stroke. The test is exact: an end that differs by a rounding error shows as a step of a pixel where an edge falls on a pixel centre. -/
+def strokeEndsFlush (w h : Nat) (v : View) (vertical : Bool) (offset : Rat) : Bool :=
+  let items : List (Item Pt) :=
+    if vertical then [.val ⟨2 + offset, 40⟩, .val ⟨2 + offset, 90 + offset⟩] else [.val ⟨2, 40 + offset⟩, .val ⟨6 + offset, 40 + offset⟩]
+  let cmd : Command := ⟨0, .flat ⟨0, 0, 0, 255⟩, .strip 1 items⟩
+  let tile := viewTile w h v strokePlot #[cmd]
+  let got := shaderPixels w h (tile.stateOf cmd) (tessellateStroke ⟨0, 0⟩ cmd)
+  !got.isEmpty &&
+    (distinctFloats (got.map fun p => if vertical then p.1 else p.2)).length == 5
+
 def main (args : List String) : IO UInt32 :=
   runTests [
     platformTest (args.contains "--expect-wasm"),
@@ -200,6 +222,10 @@ def main (args : List String) : IO UInt32 :=
     ⟨"a strip does not protrude past round joins and caps by more than a tenth of its half width",
       check (strokeViews.all fun v => stripWithinJoins 500 400 v 1 [.val ⟨1, 40⟩, .val ⟨3, 80⟩, .val ⟨5, 40⟩, .val ⟨5, 40⟩, .gap, .val ⟨7, 60⟩])
         "protrudes"⟩,
+    ⟨"vertical and horizontal strokes have ends as wide as the stroke at any sub-pixel offset",
+      let offsets : List Rat := (List.range 120).map fun (i : Nat) => (i : Rat) / 37
+      check (strokeViews.all fun v => offsets.all fun o =>
+        strokeEndsFlush 500 400 v true o && strokeEndsFlush 500 400 v false o) "an end is wider than the stroke"⟩,
     ⟨"changed tile content is uploaded and the stale buffers deleted",
       let (c, _) := compile tess {} (tiles 0)
       let (_, ops) := compile tess c [⟨#[cmd 3 9], [0], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩⟩]

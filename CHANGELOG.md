@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.15.0]
+
+- Turns the octagon at each strip value to its segment's direction (`octagonVertices` takes a direction, `stripVerticesFrom` is new), so a thin vertical or horizontal stroke has no foot at its end.
+
 ## [0.14.0]
 
 - Draws `Shading.steps`: `Gradient.ofSteps` and `shadingState` give hard-edged colour changes at each stop, for fills and strokes.
