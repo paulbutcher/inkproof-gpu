@@ -115,6 +115,16 @@ def viewFrame (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) 
 def pixelStrokeTile (w h : Nat) (list : Scene.DisplayList) : Tile :=
   { pixelTile w h list with stride := 6, size := strokeSizeWords }
 
+/-- The commands of one frame of `list` on a `w` by `h` target, as `frame` but with strips and markers sized in pixels: `tess` should be `tessellateStroke`'s. A strip is then exactly its half width wide, with round ends; `tessellate` draws Scene's conservative triangles instead, which are wider than the half width (by up to a factor of the square root of two) and have square ends. -/
+def strokeFrame (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) (w h : Nat)
+    (list : Scene.DisplayList) (bg : Scene.Color) : Cache × List Cmd :=
+  let r := compileCmds tess c [pixelStrokeTile w h list]
+  (r.1, frameSetup fresh bg ++ r.2)
+
+/-- The wire bytes of a fresh frame of `list` on a `w` by `h` target cleared to `bg`, with strips and markers drawn at their size in pixels. -/
+def strokeFrameBytes (w h : Nat) (list : Scene.DisplayList) (bg : Scene.Color) : ByteArray :=
+  ⟨(encode (strokeFrame (tessellateStroke ⟨0, 0⟩) {} true w h list bg).2).toArray⟩
+
 /-- The commands of one frame of `list`, in data coordinates, under `v`, and `overlay`, in device pixels from the top left, such as axes and gridlines, on a `w` by `h` target cleared to `bg`. Both are compiled together, so zooming uploads nothing for `list`. -/
 def viewOverlayFrame (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) (w h : Nat)
     (v : View) (plot : Scene.Rect) (list overlay : Scene.DisplayList) (bg : Scene.Color) :

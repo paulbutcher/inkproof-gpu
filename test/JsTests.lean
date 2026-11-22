@@ -229,6 +229,31 @@ def evenInk (px : Array Nat) : Bool :=
     let row := 160 - (4 + 12 * i) - 3
     level ((List.range 30).map fun c => (List.range 6).foldl (fun a r => a + ink (10 + c) (row + r)) 0)
 
+open Inkproof.Scene in
+/-- Seven vertical and seven horizontal opaque strokes of half width 3 on a 64 by 160 target, each at a different sub-pixel offset, with rows counted down from the top. -/
+def opaqueList : DisplayList :=
+  let colour : Color := ⟨0, 0, 0, 255⟩
+  let verticals := (List.range 7).map fun (i : Nat) =>
+    let x : Rat := 8 + 8 * i + (i : Rat) / 9
+    (⟨i, .flat colour, .strip 3 [.val ⟨x, 20⟩, .val ⟨x, 60⟩]⟩ : Command)
+  let horizontals := (List.range 7).map fun (i : Nat) =>
+    let y : Rat := 80 + 11 * i + (i : Rat) / 7
+    (⟨7 + i, .flat colour, .strip 3 [.val ⟨16, y⟩, .val ⟨48, y⟩]⟩ : Command)
+  (verticals ++ horizontals).toArray
+
+/-- Whether no row of a vertical stroke of `opaqueList`, nor column of a horizontal one, holds more ink than the stroke is wide (twice its half width, to 3 in 255), and the middle holds all of it. A stroke drawn wider than its half width, or with an end wider than its stem, fails. -/
+def exactWidth (px : Array Nat) : Bool :=
+  let ink (col row : Nat) : Nat := 255 - px[(row * 64 + col) * 4]!
+  let width := 6 * 255
+  (List.range 7).all (fun i =>
+    let x := 8 + 8 * i
+    let rows := (List.range 50).map fun r => (List.range 8).foldl (fun a c => a + ink (x - 4 + c) (15 + r)) 0
+    rows.all (· ≤ width + 3) && rows.getD 25 0 + 3 ≥ width) &&
+  (List.range 7).all fun i =>
+    let y := 80 + 11 * i
+    let cols := (List.range 40).map fun c => (List.range 8).foldl (fun a r => a + ink (11 + c) (y - 4 + r)) 0
+    cols.all (· ≤ width + 3) && cols.getD 20 0 + 3 ≥ width
+
 /-- Builds `Browser.lean` for the browser and runs it in headless Chromium, where the stack is far shallower than under node. -/
 def encodesInBrowser (dir : System.FilePath) : IO Bool := do
   let out := dir / "browser"
@@ -307,6 +332,11 @@ def main : IO UInt32 := do
     if !evenInk px then
       return ← fail "a translucent stroke has the same ink along its length, ends included"
   | none => return ← fail "translucent strokes rendered in headless Chromium"
+  match ← rendersBytes dir 64 160 (strokeFrameBytes 64 160 opaqueList ⟨255, 255, 255, 255⟩) with
+  | some px =>
+    if !exactWidth px then
+      return ← fail "an opaque stroke is as wide as twice its half width, ends included"
+  | none => return ← fail "opaque strokes rendered in headless Chromium"
   if !(← encodesInBrowser dir) then
     return ← fail "a frame of 40000 commands under Lasm in headless Chromium"
   for (name, text) in [("gpu.js", js), ("vertex.glsl", vertexShader.glsl),

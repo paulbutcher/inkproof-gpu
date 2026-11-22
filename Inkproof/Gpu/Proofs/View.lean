@@ -120,6 +120,18 @@ theorem viewFrame_eq (tess : Scene.Command → List UInt32) (c : Cache) (fresh :
       ((compile tess c [viewTile w h v plot list]).1,
         frameSetup fresh bg ++ (compile tess c [viewTile w h v plot list]).2.map Op.toCmd) := rfl
 
+/-- A stroke frame is the setup followed by the wire commands of `compile` for the one pixel tile of strokes. -/
+theorem strokeFrame_eq (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) (w h : Nat)
+    (list : Scene.DisplayList) (bg : Scene.Color) :
+    strokeFrame tess c fresh w h list bg =
+      ((compile tess c [pixelStrokeTile w h list]).1,
+        frameSetup fresh bg ++ (compile tess c [pixelStrokeTile w h list]).2.map Op.toCmd) := rfl
+
+/-- `strokeFrameBytes` is the encoding of a fresh stroke frame, tessellated at the origin with an empty cache. -/
+theorem strokeFrameBytes_eq (w h : Nat) (list : Scene.DisplayList) (bg : Scene.Color) :
+    strokeFrameBytes w h list bg =
+      ⟨(encode (strokeFrame (tessellateStroke ⟨0, 0⟩) {} true w h list bg).2).toArray⟩ := rfl
+
 theorem viewFrameBytes_eq (w h : Nat) (v : View) (plot : Scene.Rect) (list : Scene.DisplayList)
     (bg : Scene.Color) :
     viewFrameBytes w h v plot list bg =

@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.18.0]
+
+- `strokeFrame` and `strokeFrameBytes` draw a frame in device pixels with strips and markers at exactly their size, where `frameBytes` draws Scene's wider conservative triangles.
+
 ## [0.17.0]
 
 - A strip ends in a half octagon that shares its edge with the segment instead of a whole octagon over it, so a translucent stroke is no darker at its ends; `stripVerticesFrom` takes `Option Pt` and `capVertices` is new.
