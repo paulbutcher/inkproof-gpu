@@ -104,18 +104,31 @@ def octagonVertices (c d : Pt) : List Vtx :=
   (ring.zip (ring.drop 1)).flatMap fun (a, b) =>
     [⟨c, d, 0, 0⟩, ⟨c, d, a.1, a.2⟩, ⟨c, d, b.1, b.2⟩]
 
-/-- The vertices of a strip: an octagon about each value, which contains the disc that Scene's round joins and caps make, and the rectangle about each segment between adjacent values. Each octagon corner is `1 / cos (π / 8)`, about 1.082, times the half width from its value, so the strip is never more than about 8% of its half width wider than the thickened polyline. An octagon is turned to the direction of the segment that leaves its value, or arrives at the last, so that its sides across that segment are placed by the same arithmetic as the segment's own and a thin stroke has no step where they meet. `prev` is the direction of the segment that arrives at the first value. -/
-def stripVerticesFrom (prev : Pt) : List (Item Pt) → List Vtx
+/-- The half of the octagon about `c` that lies ahead of `c` along `d`, as a fan from the centre. Its straight edge is across `d` through `c`, with the corners that the rectangle about a segment has at its end, so a cap and a segment that meet there share an edge and cover nothing twice. -/
+def capVertices (c d : Pt) : List Vtx :=
+  let k := octagonSlope
+  let ring : List (Rat × Rat) := [(0, -1), (k, -1), (1, -k), (1, k), (k, 1), (0, 1)]
+  (ring.zip (ring.drop 1)).flatMap fun (a, b) =>
+    [⟨c, d, 0, 0⟩, ⟨c, d, a.1, a.2⟩, ⟨c, d, b.1, b.2⟩]
+
+/-- The vertices of a strip: the rectangle about each segment between adjacent values, a half octagon beyond each end of a run of values, which with the rectangle makes the disc that Scene's round caps make, and a whole octagon about each value between two, for its round joins. A run of one value is one octagon. Each octagon corner is `1 / cos (π / 8)`, about 1.082, times the half width from its value, so the strip is never more than about 8% of its half width wider than the thickened polyline. An octagon or cap is turned to the direction of the segment beside it, so that its sides across that segment are placed by the same arithmetic as the segment's own and a thin stroke has no step where they meet. `prev` is the direction of the segment that arrives at the first value, if there is one. -/
+def stripVerticesFrom (prev : Option Pt) : List (Item Pt) → List Vtx
   | [] => []
-  | .gap :: rest => stripVerticesFrom ⟨1, 0⟩ rest
+  | .gap :: rest => stripVerticesFrom none rest
   | .val a :: rest =>
     match rest with
     | .val b :: _ =>
-      octagonVertices a (a.dir b) ++ segVertices a b ++ stripVerticesFrom (a.dir b) rest
-    | _ => octagonVertices a prev ++ stripVerticesFrom ⟨1, 0⟩ rest
+      let d := a.dir b
+      (match prev with
+        | none => capVertices a ⟨-d.x, -d.y⟩
+        | some _ => octagonVertices a d) ++ segVertices a b ++ stripVerticesFrom (some d) rest
+    | _ =>
+      (match prev with
+        | none => octagonVertices a ⟨1, 0⟩
+        | some d => capVertices a d) ++ stripVerticesFrom none rest
 
 /-- The vertices of a strip, as `stripVerticesFrom` with no segment before the first value. -/
-def stripVertices (items : List (Item Pt)) : List Vtx := stripVerticesFrom ⟨1, 0⟩ items
+def stripVertices (items : List (Item Pt)) : List Vtx := stripVerticesFrom none items
 
 /-- The vertices that cover a shape when drawn by the vertex shader at its stroke size, which `strokeSize` gives. A strip or a marker is described apart from its size, so the vertices are the same in every view; the other shapes are as in `triangles`. -/
 def strokeVertices : Shape → List Vtx

@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.17.0]
+
+- A strip ends in a half octagon that shares its edge with the segment instead of a whole octagon over it, so a translucent stroke is no darker at its ends; `stripVerticesFrom` takes `Option Pt` and `capVertices` is new.
+
 ## [0.16.1]
 
 - Uses `List.rightpad` and `List.zip_toArray` from Lean core in place of local copies.

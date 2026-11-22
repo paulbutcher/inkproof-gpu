@@ -98,11 +98,11 @@ console.log(JSON.stringify(px));"
   IO.eprint out.stderr
   return out.exitCode == 0 && out.stdout.trimAscii.toString == expected
 
-/-- Runs a frame of `list` on a `w` by `h` canvas in headless Chromium and reads back every pixel as rows from the top, each pixel red, green, blue and alpha. -/
-def renders (dir : System.FilePath) (w h : Nat) (list : Inkproof.Scene.DisplayList) :
+/-- Runs the frame `frame` on a `w` by `h` canvas in headless Chromium and reads back every pixel as rows from the top, each pixel red, green, blue and alpha. -/
+def rendersBytes (dir : System.FilePath) (w h : Nat) (frame : ByteArray) :
     IO (Option (Array Nat)) := do
   IO.FS.writeFile (dir / "gpu.mjs") js
-  let bytes := ", ".intercalate ((frameBytes w h list ⟨255, 255, 255, 255⟩).data.toList.map (toString ·.toNat))
+  let bytes := ", ".intercalate (frame.data.toList.map (toString ·.toNat))
   let script := s!"import \{ chromium } from \"playwright\";
 import \{ readFileSync } from \"node:fs\";
 const browser = await chromium.launch();
@@ -130,6 +130,11 @@ console.log(JSON.stringify(px));"
     let rows := (List.range h).reverse.flatMap fun r => (vs.toList.drop (r * w * 4)).take (w * 4)
     return if vs.size == w * h * 4 then some rows.toArray else none
   | _ => return none
+
+/-- A frame of `list` on a `w` by `h` canvas, as `rendersBytes`. -/
+def renders (dir : System.FilePath) (w h : Nat) (list : Inkproof.Scene.DisplayList) :
+    IO (Option (Array Nat)) :=
+  rendersBytes dir w h (frameBytes w h list ⟨255, 255, 255, 255⟩)
 
 open Inkproof.Scene in
 /-- A display list of gradient and flat commands that overlap, on a 32 by 8 target. -/
@@ -199,6 +204,30 @@ def fillsBetween (px : Array Nat) : Bool :=
     let base := if y ≥ 8 then y - 8 else 8 - y
     let inside := (line ≤ y ∧ y ≤ 8) ∨ (8 ≤ y ∧ y ≤ line)
     dist ≤ 1 || base ≤ 1 || ((px[i * 4 + 1]! == 0) == inside)
+
+open Inkproof.Scene in
+/-- Seven vertical and seven horizontal translucent strokes 2 pixels wide on a 64 by 160 target, each at a different sub-pixel offset, with data y upwards: the vertical ones run over rows 30 to 59. -/
+def strokeList : DisplayList :=
+  let colour : Color := ⟨0, 0, 0, 128⟩
+  let verticals := (List.range 7).map fun (i : Nat) =>
+    let x : Rat := 4 + 8 * i + (i : Rat) / 9
+    (⟨i, .flat colour, .strip 1 [.val ⟨x, 100⟩, .val ⟨x, 130⟩]⟩ : Command)
+  let horizontals := (List.range 7).map fun (i : Nat) =>
+    let y : Rat := 4 + 12 * i + (i : Rat) / 7
+    (⟨7 + i, .flat colour, .strip 1 [.val ⟨10, y⟩, .val ⟨40, y⟩]⟩ : Command)
+  (verticals ++ horizontals).toArray
+
+/-- Whether every vertical stroke of `strokeList` has the same ink in each row from its first to its last, and every horizontal one in each column. A stroke whose end is drawn twice is darker there when translucent. -/
+def evenInk (px : Array Nat) : Bool :=
+  let ink (col row : Nat) : Nat := 255 - px[(row * 64 + col) * 4]!
+  let level (xs : List Nat) : Bool :=
+    xs.all fun v => v ≤ xs.foldl max 0 && xs.foldl max 0 ≤ v + 3
+  (List.range 7).all (fun i =>
+    let x := 4 + 8 * i
+    level ((List.range 30).map fun r => (List.range 6).foldl (fun a c => a + ink (x - 2 + c) (30 + r)) 0)) &&
+  (List.range 7).all fun i =>
+    let row := 160 - (4 + 12 * i) - 3
+    level ((List.range 30).map fun c => (List.range 6).foldl (fun a r => a + ink (10 + c) (row + r)) 0)
 
 /-- Builds `Browser.lean` for the browser and runs it in headless Chromium, where the stack is far shallower than under node. -/
 def encodesInBrowser (dir : System.FilePath) : IO Bool := do
@@ -271,6 +300,13 @@ def main : IO UInt32 := do
     if !fillsBetween px then
       return ← fail "an area that crosses its baseline fills only between the line and the baseline"
   | none => return ← fail "crossing area frame rendered in headless Chromium"
+  let strokeView : Inkproof.Gpu.View := ⟨0, 64, 0, 160⟩
+  match ← rendersBytes dir 64 160
+      (viewFrameBytes 64 160 strokeView ⟨0, 0, 64, 160⟩ strokeList ⟨255, 255, 255, 255⟩) with
+  | some px =>
+    if !evenInk px then
+      return ← fail "a translucent stroke has the same ink along its length, ends included"
+  | none => return ← fail "translucent strokes rendered in headless Chromium"
   if !(← encodesInBrowser dir) then
     return ← fail "a frame of 40000 commands under Lasm in headless Chromium"
   for (name, text) in [("gpu.js", js), ("vertex.glsl", vertexShader.glsl),

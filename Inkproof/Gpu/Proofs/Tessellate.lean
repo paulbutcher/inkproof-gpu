@@ -73,6 +73,16 @@ theorem squareVertices_length (c : Pt) : (squareVertices c).length = 6 := rfl
 
 theorem octagonVertices_length (c d : Pt) : (octagonVertices c d).length = 24 := rfl
 
+/-- The cap is a fan of five triangles from the centre over the ring of the corners ahead of it. -/
+theorem capVertices_eq (c d : Pt) :
+    capVertices c d =
+      let k : Rat := 4143 / 10000
+      let ring : List (Rat × Rat) := [(0, -1), (k, -1), (1, -k), (1, k), (k, 1), (0, 1)]
+      (ring.zip (ring.drop 1)).flatMap fun (a, b) =>
+        [⟨c, d, 0, 0⟩, ⟨c, d, a.1, a.2⟩, ⟨c, d, b.1, b.2⟩] := rfl
+
+theorem capVertices_length (c d : Pt) : (capVertices c d).length = 15 := rfl
+
 /-- A command's words are those of its triangles, in order. -/
 theorem tessellate_eq (origin : Pt) (c : Command) :
     tessellate origin c = ((triangles c.shape).map (triWords origin)).flatten := rfl
@@ -319,20 +329,30 @@ theorem segVertices_eq (a b : Pt) :
     segVertices a b = [⟨a, a.dir b, 0, -1⟩, ⟨b, a.dir b, 0, -1⟩, ⟨a, a.dir b, 0, 1⟩,
       ⟨b, a.dir b, 0, 1⟩, ⟨a, a.dir b, 0, 1⟩, ⟨b, a.dir b, 0, -1⟩] := rfl
 
-theorem stripVertices_eq (items : List (Item Pt)) : stripVertices items = stripVerticesFrom ⟨1, 0⟩ items := rfl
+theorem stripVertices_eq (items : List (Item Pt)) : stripVertices items = stripVerticesFrom none items := rfl
 
-theorem stripVerticesFrom_nil (prev : Pt) : stripVerticesFrom prev [] = [] := rfl
+theorem stripVerticesFrom_nil (prev : Option Pt) : stripVerticesFrom prev [] = [] := rfl
 
-theorem stripVerticesFrom_gap (prev : Pt) (rest : List (Item Pt)) :
-    stripVerticesFrom prev (.gap :: rest) = stripVerticesFrom ⟨1, 0⟩ rest := rfl
+theorem stripVerticesFrom_gap (prev : Option Pt) (rest : List (Item Pt)) :
+    stripVerticesFrom prev (.gap :: rest) = stripVerticesFrom none rest := rfl
 
-/-- The last value of a run has an octagon in the direction of the segment that arrives at it. -/
-theorem stripVerticesFrom_val_last (prev a : Pt) :
-    stripVerticesFrom prev [.val a] = octagonVertices a prev := by simp [stripVerticesFrom]
+/-- A run of one value is an octagon. -/
+theorem stripVerticesFrom_val_single (a : Pt) :
+    stripVerticesFrom none [.val a] = octagonVertices a ⟨1, 0⟩ := by simp [stripVerticesFrom]
 
-/-- A value followed by another has an octagon in the direction of the segment between them, then that segment, then the rest. -/
-theorem stripVerticesFrom_val_val (prev a b : Pt) (rest : List (Item Pt)) :
-    stripVerticesFrom prev (.val a :: .val b :: rest) =
-      octagonVertices a (a.dir b) ++ segVertices a b ++ stripVerticesFrom (a.dir b) (.val b :: rest) := rfl
+/-- The last value of a run of more than one has a cap ahead of the segment that arrives at it. -/
+theorem stripVerticesFrom_val_last (d a : Pt) :
+    stripVerticesFrom (some d) [.val a] = capVertices a d := by simp [stripVerticesFrom]
+
+/-- The first value of a run followed by another has a cap behind the segment that leaves it, then that segment, then the rest. -/
+theorem stripVerticesFrom_val_first (a b : Pt) (rest : List (Item Pt)) :
+    stripVerticesFrom none (.val a :: .val b :: rest) =
+      capVertices a ⟨-(a.dir b).x, -(a.dir b).y⟩ ++ segVertices a b ++
+        stripVerticesFrom (some (a.dir b)) (.val b :: rest) := rfl
+
+/-- A value between two has an octagon in the direction of the segment that leaves it, then that segment, then the rest. -/
+theorem stripVerticesFrom_val_val (d a b : Pt) (rest : List (Item Pt)) :
+    stripVerticesFrom (some d) (.val a :: .val b :: rest) =
+      octagonVertices a (a.dir b) ++ segVertices a b ++ stripVerticesFrom (some (a.dir b)) (.val b :: rest) := rfl
 
 end Inkproof.Gpu

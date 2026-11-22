@@ -128,21 +128,33 @@ def octagonCorners (hw : Float) (c : Float × Float) (t : Float × Float) : List
   let corner := fun (u v : Float) => (c.1 + hw * (u * t.1 - v * t.2), c.2 + hw * (u * t.2 + v * t.1))
   [corner 1 (-k), corner 1 k, corner k 1, corner (-k) 1, corner (-1) k, corner (-1) (-k), corner (-k) (-1), corner k (-1)]
 
+/-- The corners of the half of that octagon ahead of `c` along `t`, whose straight edge lies on the corners of the rectangle at `c`. -/
+def capCorners (hw : Float) (c : Float × Float) (t : Float × Float) : List (Float × Float) :=
+  let k := 0.41421356
+  let corner := fun (u v : Float) => (c.1 + hw * (u * t.1 - v * t.2), c.2 + hw * (u * t.2 + v * t.1))
+  [corner 1 (-k), corner 1 k, corner k 1, corner k (-1), corner 0 1, corner 0 (-1)]
+
 open Inkproof.Scene in
-/-- The corners of a strip's segments and of the octagons about its values, each turned to the direction of the segment that leaves its value, or arrives at the last. -/
-def stripCorners (hw : Float) (prev : Float × Float) : List (Item (Float × Float)) → List (Float × Float)
+/-- The corners of a strip's segments, of a cap beyond each end of a run, and of an octagon about each value between two, each turned to the direction of the segment beside it. -/
+def stripCorners (hw : Float) (prev : Option (Float × Float)) : List (Item (Float × Float)) → List (Float × Float)
   | [] => []
-  | .gap :: rest => stripCorners hw (1, 0) rest
+  | .gap :: rest => stripCorners hw none rest
   | .val a :: rest =>
     match rest with
     | .val b :: _ =>
-      octagonCorners hw a (unitDir a b) ++ segCorners hw a b ++ stripCorners hw (unitDir a b) rest
-    | _ => octagonCorners hw a prev ++ stripCorners hw (1, 0) rest
+      let t := unitDir a b
+      (match prev with
+        | none => capCorners hw a (-t.1, -t.2)
+        | some _ => octagonCorners hw a t) ++ segCorners hw a b ++ stripCorners hw (some t) rest
+    | _ =>
+      (match prev with
+        | none => octagonCorners hw a (1, 0)
+        | some t => capCorners hw a t) ++ stripCorners hw none rest
 
 open Inkproof.Scene in
 /-- The corners of the shape in pixels under the view: those of a strip are exact, and the others are the corners of the triangles. -/
 def pixelCorners (v : View) (plot : Rect) : Shape → List (Float × Float)
-  | .strip hw items => stripCorners (ratToFloat hw) (1, 0) (items.map fun
+  | .strip hw items => stripCorners (ratToFloat hw) none (items.map fun
       | .val p => .val (ratToFloat ((viewX v plot).apply p.x), ratToFloat ((viewY v plot).apply p.y))
       | .gap => .gap)
   | .marker k c r =>
