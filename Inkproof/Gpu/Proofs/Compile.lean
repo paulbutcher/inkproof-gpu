@@ -607,10 +607,10 @@ theorem Gradient.ofStops_short (o : Scene.Pt) (a : Scene.GradientAxis) (s : Scen
   simp only [Gradient.ofStops, Gradient.Short]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · cases a <;> simp
-  · simp only [List.length_append, List.length_map, List.length_replicate, hl]
+  · simp only [List.length_rightpad, List.length_map, hl]
     have : gradientSegments = 4 := rfl
     omega
-  · simp only [List.length_append, List.length_map, List.length_replicate, hl]
+  · simp only [List.length_rightpad, List.length_map, hl]
     have : gradientSegments = 4 := rfl
     omega
   all_goals simp only [hz]; omega
@@ -625,10 +625,10 @@ theorem Gradient.ofSteps_short (o : Scene.Pt) (a : Scene.GradientAxis) (s : Scen
   simp only [Gradient.ofSteps, Gradient.Short]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · cases a <;> simp
-  · simp only [List.length_append, List.length_map, List.length_replicate, hl]
+  · simp only [List.length_rightpad, List.length_map, hl]
     have : gradientSegments = 4 := rfl
     omega
-  · simp only [List.length_append, List.length_map, List.length_replicate, hl]
+  · simp only [List.length_rightpad, List.length_map, hl]
     have : gradientSegments = 4 := rfl
     omega
   all_goals simp only [hz]; omega

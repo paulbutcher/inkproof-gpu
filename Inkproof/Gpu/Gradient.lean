@@ -40,7 +40,7 @@ def deltaWords (a b : Color) : List UInt32 :=
 def Gradient.ofStops (o : Pt) (axis : GradientAxis) (s : Stop) (rest : List Stop) : Gradient :=
   let segs := (s :: rest).zip rest
   let rel (p : Rat) : Rat := match axis with | .x => p - o.x | .y => p - o.y
-  let pad (ws : List UInt32) : List UInt32 := ws ++ List.replicate (gradientSegments - ws.length) 0
+  let pad := List.rightpad gradientSegments (0 : UInt32)
   let delta (i : Nat) : List UInt32 :=
     (segs[i]?.map fun (a, b) => deltaWords a.color b.color).getD [0, 0, 0, 0]
   { axis := match axis with | .x => [(1 : Float32).toBits, 0] | .y => [0, (1 : Float32).toBits]
@@ -56,7 +56,7 @@ def stepLead : Rat := 1 / 4096
 def Gradient.ofSteps (o : Pt) (axis : GradientAxis) (s : Stop) (rest : List Stop) : Gradient :=
   let segs := (s :: rest).zip rest
   let rel (p : Rat) : Rat := match axis with | .x => p - o.x | .y => p - o.y
-  let pad (ws : List UInt32) : List UInt32 := ws ++ List.replicate (gradientSegments - ws.length) 0
+  let pad := List.rightpad gradientSegments (0 : UInt32)
   let delta (i : Nat) : List UInt32 :=
     (segs[i]?.map fun (a, b) => deltaWords a.color b.color).getD [0, 0, 0, 0]
   { axis := match axis with | .x => [(1 : Float32).toBits, 0] | .y => [0, (1 : Float32).toBits]

@@ -229,14 +229,10 @@ def stageTile (tess : Scene.Command → List UInt32) (s : Stage) (t : Tile) : St
 private def Tile.itemsFrom (cs : List (List UInt32)) (t : Tile) : List (List UInt32 × State) :=
   (Array.zip cs.toArray (t.list.paintOrder.map t.stateOf).toArray).toList
 
-private theorem zip_toArray {α β : Type} (a : List α) (b : List β) :
-    (Array.zip a.toArray b.toArray).toList = List.zip a b := by
-  simp only [Array.zip, Array.toList_zipWith]; rfl
-
 private theorem Tile.items_eq_itemsFrom (tess : Scene.Command → List UInt32) (t : Tile) :
     t.items tess = t.itemsFrom (t.cmds tess) := by
   simp only [Tile.items, Tile.itemsFrom, Tile.cmds]
-  rw [zip_toArray]
+  rw [List.zip_toArray, List.toList_toArray]
   induction t.list.paintOrder with
   | nil => rfl
   | cons c cs ih => simp [List.zip_cons_cons] at ih ⊢; simp [ih]
