@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.16.1]
+
+- Uses `List.rightpad` and `List.zip_toArray` from Lean core in place of local copies.
+
 ## [0.16.0]
 
 - Removes `clamp01`; the gradient proofs use `Float.clamp 0 1` from inkproof-float.
