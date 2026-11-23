@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.22.0]
+
+- Use Scene v0.29.0's `DecidableEq` instances, dropping this library's own.
+- The README's require example names no version.
+
 ## [0.21.0]
 
 - `strokeLayersBytes` and `viewLayersBytes` replay the recorded draws of a layer drawn before (`Retained`, `Stream`), so a frame costs time in the number of layers, not their commands; `wordsEq` matches buffers in constant time for the same words.
