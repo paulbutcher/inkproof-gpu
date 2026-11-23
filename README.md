@@ -23,10 +23,10 @@ GPU command lists for Inkproof charts: the command set and its binary encoding, 
 
 ## Using it
 
-Require it at a release tag in your `lakefile.lean`:
+Require it at the latest release tag (see `CHANGELOG.md`) in your `lakefile.lean`, replacing `vX.Y.Z`:
 
 ```lean
-require «inkproof-gpu» from git "https://github.com/paulbutcher/inkproof-gpu" @ "v0.5.1"
+require «inkproof-gpu» from git "https://github.com/paulbutcher/inkproof-gpu" @ "vX.Y.Z"
 ```
 
 `DESIGN.md` describes the wire format, compilation, tessellation and the shader language, and what is not proved.
