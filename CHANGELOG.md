@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.20.0]
+
+- `Layer`, `strokeLayersFrame` and `viewLayersFrame` tessellate a display list once and draw chosen layers per frame, keeping hidden ones resident (`compileKeeping`).
+- `Tile` gains `words`, and the `compile` theorems take `Tile.Sound` hypotheses.
+
 ## [0.19.0]
 
 - A circle marker is a polygon about the circle with a side count that follows its radius, within a quarter of a unit of the circle, instead of an octagon; `octagonTriangles` is replaced by `discTriangles` and `discVertices`.

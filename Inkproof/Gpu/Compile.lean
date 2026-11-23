@@ -70,7 +70,7 @@ def clipRect : Scene.Shape → Option (Option Scene.Rect)
     | some (some r') => some (r.meet r')
   | _ => none
 
-/-- One tile: the display list it covers, the transform uniforms for the current view, the view uniform of the target, the stride of its vertices, the stroke size of a shape in pixels (one Float32 word, which only strips and markers use), the scissor words for a rectangle in grid coordinates (four Int32 words, x, y, width and height in device pixels from the bottom left), and the origin of its vertices in grid coordinates, which gradient stops are taken relative to. -/
+/-- One tile: the display list it covers, the transform uniforms for the current view, the view uniform of the target, the stride of its vertices, the stroke size of a shape in pixels (one Float32 word, which only strips and markers use), the scissor words for a rectangle in grid coordinates (four Int32 words, x, y, width and height in device pixels from the bottom left), the origin of its vertices in grid coordinates, which gradient stops are taken relative to, and, for a tile whose commands were tessellated already, their vertex words, which `compile` then uses in place of tessellating them again. -/
 structure Tile where
   list : Scene.DisplayList
   slope : List UInt32
@@ -80,6 +80,7 @@ structure Tile where
   size : Scene.Shape → List UInt32
   scissor : Scene.Rect → List UInt32
   origin : Scene.Pt := ⟨0, 0⟩
+  words : Option (List (List UInt32)) := none
 
 /-- The state a command is drawn in. A command that is clipped to nothing, or whose shading the renderer cannot draw (`shadingState`), gets an empty scissor, which draws nothing. -/
 def Tile.stateOf (t : Tile) (c : Scene.Command) : State :=
@@ -92,13 +93,19 @@ def Tile.stateOf (t : Tile) (c : Scene.Command) : State :=
       | some none => [0, 0, 0, 0]
       | some (some r) => t.scissor r, g⟩
 
-/-- The vertex words of the commands of a tile, in the order they are painted. -/
+/-- The vertex words of the commands of a tile, in the order they are painted: those it holds, or else those `tess` gives. -/
 def Tile.cmds (tess : Scene.Command → List UInt32) (t : Tile) : List (List UInt32) :=
-  t.list.paintOrder.map tess
+  match t.words with
+  | some ws => ws
+  | none => t.list.paintOrder.map tess
 
 /-- The vertex words and draw state of each command of a tile, in the order they are painted. -/
 def Tile.items (tess : Scene.Command → List UInt32) (t : Tile) : List (List UInt32 × State) :=
-  t.list.paintOrder.map fun c => (tess c, t.stateOf c)
+  (t.cmds tess).zip (t.list.paintOrder.map t.stateOf)
+
+/-- The words of a tile are those of its commands under `tess`. A tile that holds none is sound. -/
+def Tile.Sound (tess : Scene.Command → List UInt32) (t : Tile) : Prop :=
+  t.cmds tess = t.list.paintOrder.map tess
 
 /-- Buffers `base`, `base + 1`, ... hold `words`, one buffer per command. -/
 structure Entry where
@@ -231,11 +238,8 @@ private def Tile.itemsFrom (cs : List (List UInt32)) (t : Tile) : List (List UIn
 
 private theorem Tile.items_eq_itemsFrom (tess : Scene.Command → List UInt32) (t : Tile) :
     t.items tess = t.itemsFrom (t.cmds tess) := by
-  simp only [Tile.items, Tile.itemsFrom, Tile.cmds]
+  simp only [Tile.items, Tile.itemsFrom]
   rw [List.zip_toArray, List.toList_toArray]
-  induction t.list.paintOrder with
-  | nil => rfl
-  | cons c cs ih => simp [List.zip_cons_cons] at ih ⊢; simp [ih]
 
 private def stageTileShared (tess : Scene.Command → List UInt32) (s : Stage) (t : Tile) : Stage :=
   let cs := t.cmds tess
@@ -257,14 +261,21 @@ def Tile.Cached (tess : Scene.Command → List UInt32) (c : Cache) (t : Tile) : 
 instance (tess : Scene.Command → List UInt32) (c : Cache) (t : Tile) : Decidable (t.Cached tess c) :=
   inferInstanceAs (Decidable (∃ e ∈ c.entries, e.words = t.cmds tess))
 
-/-- One frame: delete the buffers no tile uses, upload those of tiles not cached, then for each
-command of each tile in paint order set the state and draw. -/
-def compile (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) : Cache × List Op :=
-  let used (e : Entry) : Bool := tiles.any fun t => decide (e.words = t.cmds tess)
+/-- One frame: delete the buffers no tile uses and `keep` does not hold, upload those of tiles not cached, then for each
+command of each tile in paint order set the state and draw. A buffer in `keep` stays resident undrawn, so that a later frame can draw it without uploading it again. -/
+def compileKeeping (tess : Scene.Command → List UInt32) (c : Cache)
+    (keep : List (List (List UInt32))) (tiles : List Tile) : Cache × List Op :=
+  let used (e : Entry) : Bool :=
+    keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess)
   let s := tiles.foldl (stageTile tess)
     ⟨{ c with entries := c.entries.filter used },
       (c.entries.filter (!used ·)).flatMap fun e => deletes e.base e.words.length, []⟩
   (s.cache, s.ops ++ itemsOps none s.items)
+
+/-- One frame: delete the buffers no tile uses, upload those of tiles not cached, then for each
+command of each tile in paint order set the state and draw. -/
+def compile (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) : Cache × List Op :=
+  compileKeeping tess c [] tiles
 
 /-- The wire form of a frame. -/
 def compileCmds (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) :

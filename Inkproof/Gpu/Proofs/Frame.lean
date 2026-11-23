@@ -135,11 +135,13 @@ private theorem itemsOf_fits (tess : Scene.Command → List UInt32) (t : Tile)
     · exact ih (b + 1) (fun q hq => hp q (List.mem_cons_of_mem _ hq)) i hi
 
 /-- Every operation of a frame fits the wire when the vertex words of every command and the words of every tile do. -/
-theorem compile_fits (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile)
+theorem compileKeeping_fits (tess : Scene.Command → List UInt32) (c : Cache)
+    (keep : List (List (List UInt32))) (tiles : List Tile)
+    (hsound : ∀ t ∈ tiles, t.Sound tess)
     (htess : ∀ x, (tess x).length < UInt32.size)
     (ht : ∀ t ∈ tiles, t.slope.length < UInt32.size ∧ t.offset.length < UInt32.size ∧
       (∀ s, (t.size s).length < UInt32.size) ∧ t.view.length < UInt32.size ∧ ∀ r, (t.scissor r).length < UInt32.size) :
-    ∀ o ∈ (compile tess c tiles).2, o.Fits := by
+    ∀ o ∈ (compileKeeping tess c keep tiles).2, o.Fits := by
   have hup : ∀ (b : Nat) (ws : List (List UInt32)), (∀ w ∈ ws, w.length < UInt32.size) →
       ∀ o ∈ uploads b ws, o.Fits := by
     intro b ws
@@ -174,12 +176,14 @@ theorem compile_fits (tess : Scene.Command → List UInt32) (c : Cache) (tiles :
       obtain ⟨hs, ho, hz, hw, hc⟩ := ht t (hts t (List.mem_cons_self ..))
       have hps : ∀ p ∈ t.items tess, ∃ c ∈ t.list.paintOrder, p = (tess c, t.stateOf c) := by
         intro p hp
-        simp only [Tile.items, List.mem_map] at hp
+        rw [Tile.items_eq tess t (hsound t (hts t (List.mem_cons_self ..)))] at hp
+        simp only [List.mem_map] at hp
         obtain ⟨c, hc, rfl⟩ := hp
         exact ⟨c, hc, rfl⟩
       have hcm : ∀ w ∈ t.cmds tess, w.length < UInt32.size := by
         intro w hw
-        simp only [Tile.cmds, List.mem_map] at hw
+        rw [hsound t (hts t (List.mem_cons_self ..))] at hw
+        simp only [List.mem_map] at hw
         obtain ⟨x, _, rfl⟩ := hw
         exact htess x
       simp only [List.foldl_cons]
@@ -206,18 +210,20 @@ theorem compile_fits (tess : Scene.Command → List UInt32) (c : Cache) (tiles :
           rcases hi with hi | hi
           · exact h2 i hi
           · exact itemsOf_fits tess t hs ho hz hw hc _ _ hps i hi
-  unfold compile
+  unfold compileKeeping
   dsimp only
   have hset : ∀ o ∈ ((c.entries.filter fun e =>
-      !(tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
+      !(keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
         fun e => deletes e.base e.words.length), o.Fits := by
     intro o ho
     simp only [List.mem_flatMap] at ho
     obtain ⟨e, _, ho⟩ := ho
     exact hdel _ _ o ho
   have hk := key tiles (fun _ h => h)
-    ⟨{ c with entries := c.entries.filter fun e => tiles.any fun t => decide (e.words = t.cmds tess) },
-      (c.entries.filter fun e => !(tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
+    ⟨{ c with entries := c.entries.filter fun e =>
+        keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess) },
+      (c.entries.filter fun e =>
+        !(keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
         fun e => deletes e.base e.words.length, []⟩ hset (fun i hi => nomatch hi)
   intro o ho
   simp only [List.mem_append] at ho
@@ -237,6 +243,14 @@ theorem compile_fits (tess : Scene.Command → List UInt32) (c : Cache) (tiles :
     rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
       first | trivial | assumption
 
+theorem compile_fits (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile)
+    (hsound : ∀ t ∈ tiles, t.Sound tess)
+    (htess : ∀ x, (tess x).length < UInt32.size)
+    (ht : ∀ t ∈ tiles, t.slope.length < UInt32.size ∧ t.offset.length < UInt32.size ∧
+      (∀ s, (t.size s).length < UInt32.size) ∧ t.view.length < UInt32.size ∧ ∀ r, (t.scissor r).length < UInt32.size) :
+    ∀ o ∈ (compile tess c tiles).2, o.Fits :=
+  compileKeeping_fits tess c [] tiles hsound htess ht
+
 /-- A frame decodes to itself once encoded, whatever the display list, provided the vertex words of a command fit the wire and the frame has fewer than `2 ^ 32` commands. -/
 theorem frame_roundtrip (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) (w h : Nat)
     (list : Scene.DisplayList) (bg : Scene.Color)
@@ -253,7 +267,8 @@ theorem frame_roundtrip (tess : Scene.Command → List UInt32) (c : Cache) (fres
     · simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
       rcases hx with rfl | rfl | rfl <;>
         simp [Cmd.WellFormed, specOf, specs, ArgsFit, Arg.Fits, UInt32.size]
-  · exact (compile_fits tess c [pixelTile w h list] htess (by
+  · exact (compile_fits tess c [pixelTile w h list]
+    (fun t ht => by obtain rfl := List.mem_singleton.mp ht; exact Tile.cmds_eq tess _ rfl) htess (by
       intro t ht
       obtain rfl := List.mem_singleton.mp ht
       simp [pixelTile, UInt32.size, pixelScissor, viewWords])  o ho).wellFormed

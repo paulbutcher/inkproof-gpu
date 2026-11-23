@@ -150,9 +150,21 @@ private theorem itemsOf_map (h : Nat) (ps : List (List UInt32 × State)) :
   | nil => simp [itemsOf]
   | cons c cs ih => obtain ⟨w, u⟩ := c; simp [itemsOf, ih, Item.toDraw]
 
-private theorem items_cmds (tess : Scene.Command → List UInt32) (t : Tile) :
+theorem Tile.items_eq (tess : Scene.Command → List UInt32) (t : Tile) (hs : t.Sound tess) :
+    t.items tess = t.list.paintOrder.map fun c => (tess c, t.stateOf c) := by
+  unfold Tile.Sound at hs
+  simp only [Tile.items, hs]
+  generalize t.list.paintOrder = l
+  induction l with
+  | nil => rfl
+  | cons c cs ih => simp [List.zip_cons_cons, ih]
+
+private theorem items_cmds (tess : Scene.Command → List UInt32) (t : Tile) (hs : t.Sound tess) :
     (t.items tess).map Prod.fst = t.cmds tess := by
-  simp [Tile.items, Tile.cmds, List.map_map, Function.comp_def]
+  rw [Tile.items_eq tess t hs]
+  unfold Tile.Sound at hs
+  rw [hs]
+  simp [List.map_map, Function.comp_def]
 
 /-- The draws of a frame: each tile's commands in the display list's paint order, each with the
 tile's transform, its colour and its clip. -/
@@ -199,7 +211,7 @@ private theorem itemsOf_ok (g : Gpu) (ps : List (List UInt32 × State)) (h : Nat
       exact ⟨j + 1, by simpa using hj, by omega, h2⟩
 
 private theorem stageTile_inv (tess : Scene.Command → List UInt32) (s : Stage) (g : Gpu) (t : Tile)
-    (hs : s.Inv g) :
+    (hsound : t.Sound tess) (hs : s.Inv g) :
     (stageTile tess s t).Inv g ∧
     (stageTile tess s t).items.map Item.toDraw =
       s.items.map Item.toDraw ++ (t.items tess).map fun p => Draw.mk p.1 (p.1.length / p.2.stride) p.2 := by
@@ -213,7 +225,7 @@ private theorem stageTile_inv (tess : Scene.Command → List UInt32) (s : Stage)
     have hw : e.words = (t.cmds tess) := by simpa using List.find?_some he
     obtain ⟨hb, hbuf⟩ := hv.1 e hmem
     have hok := itemsOf_ok (g.run s.ops) (t.items tess) e.base (fun j hj => by
-      rw [items_cmds, ← hw]; exact hbuf j (by rw [hw, ← items_cmds, List.length_map]; exact hj))
+      rw [items_cmds tess t hsound, ← hw]; exact hbuf j (by rw [hw, ← items_cmds tess t hsound, List.length_map]; exact hj))
     refine ⟨⟨hv, ?_, hset⟩, ?_⟩
     · intro i hi'
       simp only [List.mem_append] at hi'
@@ -221,7 +233,7 @@ private theorem stageTile_inv (tess : Scene.Command → List UInt32) (s : Stage)
       · exact hi i hi'
       · obtain ⟨j, hj, h1, h2⟩ := hok i hi'
         refine ⟨?_, h2⟩
-        have : j < e.words.length := by rw [hw, ← items_cmds, List.length_map]; exact hj
+        have : j < e.words.length := by rw [hw, ← items_cmds tess t hsound, List.length_map]; exact hj
         dsimp only
         omega
     · rw [List.map_append, hmap]
@@ -233,7 +245,7 @@ private theorem stageTile_inv (tess : Scene.Command → List UInt32) (s : Stage)
     have hnew : ∀ j, j < ws.length →
         ((g.run s.ops).run (uploads n ws)).buffers (n + j) = ws[j]? := fun j hj =>
       run_uploads_in _ _ _ _ (by omega)
-    have hfst : (t.items tess).map Prod.fst = ws := by rw [items_cmds, hws]
+    have hfst : (t.items tess).map Prod.fst = ws := by rw [items_cmds tess t hsound, hws]
     have hlen : (t.items tess).length = ws.length := by
       rw [← hfst, List.length_map]
     have hold : ∀ k, k < n → ((g.run s.ops).run (uploads n ws)).buffers k = (g.run s.ops).buffers k :=
@@ -271,20 +283,21 @@ private theorem stageTile_inv (tess : Scene.Command → List UInt32) (s : Stage)
     · rw [List.map_append, hmap]
 
 private theorem foldl_stage (tess : Scene.Command → List UInt32) (g : Gpu) :
-    ∀ (tiles : List Tile) (s : Stage), s.Inv g →
+    ∀ (tiles : List Tile) (s : Stage), (∀ t ∈ tiles, t.Sound tess) → s.Inv g →
       (tiles.foldl (stageTile tess) s).Inv g ∧
       (tiles.foldl (stageTile tess) s).items.map Item.toDraw =
         s.items.map Item.toDraw ++ frameDraws tess tiles := by
   intro tiles
   induction tiles with
-  | nil => intro s hs; simp [frameDraws, hs]
+  | nil => intro s _ hs; simp [frameDraws, hs]
   | cons t ts ih =>
-    intro s hs
-    obtain ⟨h1, h2⟩ := stageTile_inv tess s g t hs
-    obtain ⟨h3, h4⟩ := ih _ h1
+    intro s hsound hs
+    obtain ⟨h1, h2⟩ := stageTile_inv tess s g t (hsound t (List.mem_cons_self ..)) hs
+    obtain ⟨h3, h4⟩ := ih _ (fun t' ht' => hsound t' (List.mem_cons_of_mem _ ht')) h1
     refine ⟨h3, ?_⟩
     simp only [List.foldl_cons, h4, h2, frameDraws, List.flatMap_cons, List.append_assoc]
-    simp [Tile.items, List.map_map, Function.comp_def]
+    rw [Tile.items_eq tess t (hsound t (List.mem_cons_self ..))]
+    simp [List.map_map, Function.comp_def]
 
 theorem Gradient.ops_sub (prev : Option Gradient) (g : Gradient) (o : Op) (h : o ∈ g.ops prev) :
     o ∈ g.ops none := by
@@ -373,22 +386,40 @@ private theorem run_draws (g : Gpu) (prev : Option Gradient) (L : List Item)
     rw [hs] at this ⊢
     refine ⟨by rw [this.1]; simp [Item.toDraw], this.2⟩
 
-private theorem compile_eq (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) :
+private theorem compile_eq (tess : Scene.Command → List UInt32) (c : Cache)
+    (keep : List (List (List UInt32))) (tiles : List Tile) :
     ∃ s : Stage, s = tiles.foldl (stageTile tess)
-      ⟨{ c with entries := c.entries.filter fun e => tiles.any fun t => decide (e.words = t.cmds tess) },
-        (c.entries.filter fun e => !(tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
+      ⟨{ c with entries := c.entries.filter fun e =>
+          keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess) },
+        (c.entries.filter fun e =>
+          !(keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
           fun e => deletes e.base e.words.length, []⟩ ∧
-      compile tess c tiles = (s.cache, s.ops ++ itemsOps none s.items) :=
+      compileKeeping tess c keep tiles = (s.cache, s.ops ++ itemsOps none s.items) :=
   ⟨_, rfl, rfl⟩
 
-private theorem initial_inv (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) (g : Gpu)
+/-- A frame deletes the buffers neither a tile nor `keep` uses, stages each tile in order, and draws what the stages collected. -/
+theorem compileKeeping_eq (tess : Scene.Command → List UInt32) (c : Cache)
+    (keep : List (List (List UInt32))) (tiles : List Tile) :
+    compileKeeping tess c keep tiles =
+      let used (e : Entry) : Bool :=
+        keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess)
+      let s := tiles.foldl (stageTile tess)
+        ⟨{ c with entries := c.entries.filter used },
+          (c.entries.filter (!used ·)).flatMap fun e => deletes e.base e.words.length, []⟩
+      (s.cache, s.ops ++ itemsOps none s.items) :=
+  rfl
+
+private theorem initial_inv (tess : Scene.Command → List UInt32) (c : Cache)
+    (keep : List (List (List UInt32))) (tiles : List Tile) (g : Gpu)
     (hv : c.Valid g) :
     (Stage.mk
-      { c with entries := c.entries.filter fun e => tiles.any fun t => decide (e.words = t.cmds tess) }
-      ((c.entries.filter fun e => !(tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
+      { c with entries := c.entries.filter fun e =>
+          keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess) }
+      ((c.entries.filter fun e =>
+          !(keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
           fun e => deletes e.base e.words.length) []).Inv g := by
   have hperm := List.filter_append_perm
-    (fun e : Entry => tiles.any fun t => decide (e.words = t.cmds tess)) c.entries
+    (fun e : Entry => keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess)) c.entries
   have hpw := (hperm.pairwise_iff (fun h => by omega)).mpr hv.2
   rw [List.pairwise_append] at hpw
   refine ⟨⟨fun e he => ?_, hpw.1⟩, by simp, fun o ho => ?_⟩
@@ -408,14 +439,15 @@ private theorem initial_inv (tess : Scene.Command → List UInt32) (c : Cache) (
     exact deletes_setup _ _ o ho
 
 /-- Running a frame from any GPU the cache is valid for performs the draws of the display lists
-in paint order, and leaves the cache valid for the GPU it produces. -/
-theorem compile_log (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) (g : Gpu)
-    (hv : c.Valid g) :
-    (g.run (compile tess c tiles).2).log = g.log ++ frameDraws tess tiles ∧
-    (compile tess c tiles).1.Valid (g.run (compile tess c tiles).2) := by
-  obtain ⟨s, hs, hc⟩ := compile_eq tess c tiles
+in paint order, and leaves the cache valid for the GPU it produces. Buffers in `keep` stay resident. -/
+theorem compileKeeping_log (tess : Scene.Command → List UInt32) (c : Cache)
+    (keep : List (List (List UInt32))) (tiles : List Tile) (g : Gpu)
+    (hsound : ∀ t ∈ tiles, t.Sound tess) (hv : c.Valid g) :
+    (g.run (compileKeeping tess c keep tiles).2).log = g.log ++ frameDraws tess tiles ∧
+    (compileKeeping tess c keep tiles).1.Valid (g.run (compileKeeping tess c keep tiles).2) := by
+  obtain ⟨s, hs, hc⟩ := compile_eq tess c keep tiles
   rw [hc]
-  obtain ⟨hinv, hmap⟩ := foldl_stage tess g tiles _ (initial_inv tess c tiles g hv)
+  obtain ⟨hinv, hmap⟩ := foldl_stage tess g tiles _ hsound (initial_inv tess c keep tiles g hv)
   rw [← hs] at hinv hmap
   obtain ⟨hvalid, hitems, hset⟩ := hinv
   rw [Gpu.run_append]
@@ -425,9 +457,16 @@ theorem compile_log (tess : Scene.Command → List UInt32) (c : Cache) (tiles : 
   simp only [List.nil_append, List.map_nil] at hmap
   rw [← hmap]
 
+theorem compile_log (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) (g : Gpu)
+    (hsound : ∀ t ∈ tiles, t.Sound tess) (hv : c.Valid g) :
+    (g.run (compile tess c tiles).2).log = g.log ++ frameDraws tess tiles ∧
+    (compile tess c tiles).1.Valid (g.run (compile tess c tiles).2) :=
+  compileKeeping_log tess c [] tiles g hsound hv
+
 theorem compile_valid (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) (g : Gpu)
-    (hv : c.Valid g) : (compile tess c tiles).1.Valid (g.run (compile tess c tiles).2) :=
-  (compile_log tess c tiles g hv).2
+    (hsound : ∀ t ∈ tiles, t.Sound tess) (hv : c.Valid g) :
+    (compile tess c tiles).1.Valid (g.run (compile tess c tiles).2) :=
+  (compile_log tess c tiles g hsound hv).2
 
 private theorem stageTile_entries (tess : Scene.Command → List UInt32) (s : Stage) (t : Tile) :
     (∀ e ∈ s.cache.entries, e ∈ (stageTile tess s t).cache.entries) ∧
@@ -457,26 +496,43 @@ private theorem foldl_entries (tess : Scene.Command → List UInt32) :
     · exact h2 t' ht'
 
 /-- After a frame, every tile of it is cached. -/
-theorem compile_cache_cached (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) :
-    ∀ t ∈ tiles, t.Cached tess (compile tess c tiles).1 := by
-  obtain ⟨s, hs, hc⟩ := compile_eq tess c tiles
+theorem compileKeeping_cache_cached (tess : Scene.Command → List UInt32) (c : Cache)
+    (keep : List (List (List UInt32))) (tiles : List Tile) :
+    ∀ t ∈ tiles, t.Cached tess (compileKeeping tess c keep tiles).1 := by
+  obtain ⟨s, hs, hc⟩ := compile_eq tess c keep tiles
   rw [hc]
   subst hs
   exact (foldl_entries tess tiles _).2
 
+/-- A buffer of the cache whose words are in `keep` survives a frame whatever its tiles. -/
+theorem compileKeeping_kept (tess : Scene.Command → List UInt32) (c : Cache)
+    (keep : List (List (List UInt32))) (tiles : List Tile) (e : Entry) (he : e ∈ c.entries)
+    (hk : e.words ∈ keep) : e ∈ (compileKeeping tess c keep tiles).1.entries := by
+  obtain ⟨s, hs, hc⟩ := compile_eq tess c keep tiles
+  rw [hc]
+  subst hs
+  refine (foldl_entries tess tiles _).1 e ?_
+  simp only [List.mem_filter, Bool.or_eq_true, List.any_eq_true]
+  exact ⟨he, Or.inl ⟨e.words, hk, by simp⟩⟩
+
+theorem compile_cache_cached (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) :
+    ∀ t ∈ tiles, t.Cached tess (compile tess c tiles).1 :=
+  compileKeeping_cache_cached tess c [] tiles
+
 /-- Reusing cached buffers draws what uploading afresh would. -/
 theorem cached_eq_fresh (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile) (g : Gpu)
-    (hv : c.Valid g) :
+    (hsound : ∀ t ∈ tiles, t.Sound tess) (hv : c.Valid g) :
     (g.run (compile tess c tiles).2).log = g.log ++ frameDraws tess tiles ∧
     (Gpu.empty.run (compile tess {} tiles).2).log = frameDraws tess tiles := by
-  refine ⟨(compile_log tess c tiles g hv).1, ?_⟩
-  simpa [Gpu.empty] using (compile_log tess {} tiles Gpu.empty (Cache.valid_empty _)).1
+  refine ⟨(compile_log tess c tiles g hsound hv).1, ?_⟩
+  simpa [Gpu.empty] using (compile_log tess {} tiles Gpu.empty hsound (Cache.valid_empty _)).1
 
 /-- When every tile is cached, a frame creates and uploads nothing: it is uniform updates, draws and
 deletions of buffers no tile needs. -/
-theorem compile_cached (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile)
-    (h : ∀ t ∈ tiles, t.Cached tess c) : ∀ o ∈ (compile tess c tiles).2, ¬ o.IsUpload := by
-  obtain ⟨s, hs, hc⟩ := compile_eq tess c tiles
+theorem compileKeeping_cached (tess : Scene.Command → List UInt32) (c : Cache)
+    (keep : List (List (List UInt32))) (tiles : List Tile)
+    (h : ∀ t ∈ tiles, t.Cached tess c) : ∀ o ∈ (compileKeeping tess c keep tiles).2, ¬ o.IsUpload := by
+  obtain ⟨s, hs, hc⟩ := compile_eq tess c keep tiles
   rw [hc]
   subst hs
   have key : ∀ (ts : List Tile) (s : Stage), (∀ o ∈ s.ops, ¬ o.IsUpload) →
@@ -519,12 +575,16 @@ theorem compile_cached (tess : Scene.Command → List UInt32) (c : Cache) (tiles
     · intro t ht
       obtain ⟨e, he, hw⟩ := h t ht
       refine ⟨e, ?_, hw⟩
-      simp only [List.mem_filter, List.any_eq_true]
-      exact ⟨he, t, ht, by simpa using hw⟩
+      simp only [List.mem_filter, List.any_eq_true, Bool.or_eq_true]
+      exact ⟨he, Or.inr ⟨t, ht, by simpa using hw⟩⟩
   · obtain ⟨i, _, ho⟩ := mem_itemsOps _ _ _ ho
     simp only [Item.ops_none, List.mem_cons, List.not_mem_nil, or_false] at ho
     rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
       simp [Op.IsUpload]
+
+theorem compile_cached (tess : Scene.Command → List UInt32) (c : Cache) (tiles : List Tile)
+    (h : ∀ t ∈ tiles, t.Cached tess c) : ∀ o ∈ (compile tess c tiles).2, ¬ o.IsUpload :=
+  compileKeeping_cached tess c [] tiles h
 
 theorem Op.toCmd_wellFormed (o : Op)
     (h : (∀ h ws, o = .upload h ws → ws.length < UInt32.size) ∧
@@ -550,8 +610,12 @@ theorem compileCmds_eq (tess : Scene.Command → List UInt32) (c : Cache) (tiles
 @[simp] theorem Op.toCmd_draw (h n w : Nat) :
     (Op.draw h n w).toCmd = ⟨5, [.u32 h.toUInt32, .u32 n.toUInt32, .u32 w.toUInt32]⟩ := rfl
 
-theorem Tile.cmds_eq (tess : Scene.Command → List UInt32) (t : Tile) :
-    t.cmds tess = t.list.paintOrder.map tess := rfl
+theorem Tile.cmds_eq (tess : Scene.Command → List UInt32) (t : Tile) (h : t.words = none) :
+    t.cmds tess = t.list.paintOrder.map tess := by simp [Tile.cmds, h]
+
+/-- A tile that holds no words is sound. -/
+theorem Tile.sound_of_words_none (tess : Scene.Command → List UInt32) (t : Tile) (h : t.words = none) :
+    t.Sound tess := Tile.cmds_eq tess t h
 
 theorem specOf_eq_find (op : UInt8) : specOf op = specs.find? (·.op == op) := rfl
 
@@ -730,8 +794,5 @@ theorem Item.ops_eq (prev : Option Gradient) (i : Item) :
     i.ops prev = [.uniform 0 i.state.slope, .uniform 1 i.state.offset, .uniform 2 i.state.size,
       .uniform 3 i.state.view, .uniform 4 i.state.colour] ++ i.state.grad.ops prev ++
       [.scissor i.state.scissor, .draw i.handle (i.words.length / i.state.stride) i.state.stride] := rfl
-
-theorem Tile.items_eq (tess : Scene.Command → List UInt32) (t : Tile) :
-    t.items tess = t.list.paintOrder.map fun c => (tess c, t.stateOf c) := rfl
 
 end Inkproof.Gpu

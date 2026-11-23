@@ -256,7 +256,8 @@ private theorem compile_cached_head (tess : Scene.Command → List UInt32) (c' :
       rcases hx with hx | hx
       · exact absurd hxu (hops x hx)
       · exact ⟨_, hx⟩
-  simp only [compile, List.foldl_cons, List.foldl_nil, List.mem_append] at ho
+  simp only [compile, compileKeeping, List.any_nil, Bool.false_or, List.foldl_cons, List.foldl_nil,
+    List.mem_append] at ho
   rcases ho with ho | ho
   · exact h2 o ho hu
   · obtain ⟨i, _, ho⟩ := mem_itemsOps _ _ _ ho

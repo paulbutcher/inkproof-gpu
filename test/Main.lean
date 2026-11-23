@@ -52,8 +52,8 @@ def shapes : List Shape :=
    .text ⟨0, 0, 3, 3⟩ "a", .clipped ⟨0, 0, 1, 1⟩ (.rect ⟨0, 0, 4, 4⟩)]
 
 def tiles (u : UInt32) : List Tile :=
-  [⟨#[cmd 2 0, cmd 0 1], [u], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩⟩,
-   ⟨#[cmd 1 2], [u + 1], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩⟩]
+  [⟨#[cmd 2 0, cmd 0 1], [u], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩, none⟩,
+   ⟨#[cmd 1 2], [u + 1], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩, none⟩]
 
 def isUpload : Op → Bool
   | .create _ | .upload _ _ => true
@@ -242,7 +242,7 @@ def main (args : List String) : IO UInt32 :=
         strokeEndsFlush 500 400 v true o && strokeEndsFlush 500 400 v false o) "an end is wider than the stroke"⟩,
     ⟨"changed tile content is uploaded and the stale buffers deleted",
       let (c, _) := compile tess {} (tiles 0)
-      let (_, ops) := compile tess c [⟨#[cmd 3 9], [0], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩⟩]
+      let (_, ops) := compile tess c [⟨#[cmd 3 9], [0], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩, none⟩]
       check (ops.any isUpload && ops.any (fun | .delete _ => true | _ => false)) "no re-upload"⟩,
     ⟨"compiled frame survives the wire",
       let (_, cmds) := compileCmds tess {} (tiles 0)
@@ -277,7 +277,7 @@ def main (args : List String) : IO UInt32 :=
         (Inkproof.Gpu.triangles (.marker .circle ⟨0, 0⟩ r)).length ≤ 8) "more than eight"⟩,
     ⟨"each draw is set up with its colour and scissor",
       let t : Tile := ⟨#[⟨0, .flat ⟨255, 0, 0, 255⟩, .clipped ⟨0, 0, 1, 1⟩ (.rect ⟨0, 0, 4, 4⟩)⟩,
-        ⟨1, .flat ⟨0, 0, 0, 0⟩, .rect ⟨0, 0, 1, 1⟩⟩], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨0, 0⟩⟩
+        ⟨1, .flat ⟨0, 0, 0, 0⟩, .rect ⟨0, 0, 1, 1⟩⟩], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨0, 0⟩, none⟩
       let (_, ops) := compile tess {} [t]
       check (ops.filter (fun | .scissor _ => true | _ => false) ==
           [.scissor [7, 7, 7, 7], .scissor []] &&
@@ -286,7 +286,7 @@ def main (args : List String) : IO UInt32 :=
     ⟨"a gradient command is drawn with its stops as uniforms, relative to the tile origin",
       let g : Inkproof.Scene.Command := ⟨0, .gradient .y ⟨10, ⟨255, 0, 0, 255⟩⟩
         [⟨14, ⟨0, 0, 255, 255⟩⟩], .rect ⟨0, 0, 1, 1⟩⟩
-      let t : Tile := ⟨#[g], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨3, 4⟩⟩
+      let t : Tile := ⟨#[g], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨3, 4⟩, none⟩
       let (_, ops) := compile tess {} [t]
       let one : UInt32 := 0x3F800000
       check (ops.contains (.scissor []) && ops.contains (.uniform 5 [0, one]) &&
@@ -296,20 +296,20 @@ def main (args : List String) : IO UInt32 :=
     ⟨"gradient uniforms are set again only when they change, and a flat colour after a gradient resets them",
       let g : Inkproof.Scene.Command := ⟨1, .gradient .x ⟨0, ⟨255, 0, 0, 255⟩⟩ [⟨4, ⟨0, 0, 255, 255⟩⟩], .rect ⟨0, 0, 1, 1⟩⟩
       let t : Tile := ⟨#[cmd 0 0, g, ⟨2, g.color, .rect ⟨1, 1, 2, 2⟩⟩, ⟨3, .flat ⟨0, 0, 0, 255⟩, .rect ⟨2, 2, 3, 3⟩⟩],
-        [0], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩⟩
+        [0], [0], [], 2, fun _ => [0], fun _ => [], ⟨0, 0⟩, none⟩
       let (_, ops) := compile tess {} [t]
       let d0 := ops.filterMap fun | .uniform 8 ws => some ws | _ => none
       check (d0.length == 3 && d0.getLast? == some [0, 0, 0, 0]) "wrong uniforms"⟩,
     ⟨"a gradient with descending stops is drawn with an empty scissor",
       let g : Inkproof.Scene.Command := ⟨0, .gradient .x ⟨5, ⟨255, 0, 0, 255⟩⟩
         [⟨1, ⟨0, 0, 255, 255⟩⟩], .rect ⟨0, 0, 1, 1⟩⟩
-      let t : Tile := ⟨#[g], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨0, 0⟩⟩
+      let t : Tile := ⟨#[g], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨0, 0⟩, none⟩
       let (_, ops) := compile tess {} [t]
       check (ops.contains (.scissor [0, 0, 0, 0]) && !ops.contains (.scissor [7, 7, 7, 7])) "drawn"⟩,
     ⟨"a gradient with too many stops is drawn with an empty scissor",
       let stops : List Inkproof.Scene.Stop := (List.range 5).map fun (i : Nat) => ⟨(i : Rat) + 1, ⟨0, 0, 0, 255⟩⟩
       let g : Inkproof.Scene.Command := ⟨0, .gradient .x ⟨0, ⟨255, 0, 0, 255⟩⟩ stops, .rect ⟨0, 0, 1, 1⟩⟩
-      let t : Tile := ⟨#[g], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨0, 0⟩⟩
+      let t : Tile := ⟨#[g], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨0, 0⟩, none⟩
       let (_, ops) := compile tess {} [t]
       check (ops.contains (.scissor [0, 0, 0, 0]) && !ops.contains (.scissor [7, 7, 7, 7])) "drawn"⟩,
     ⟨"a frame of 40000 commands encodes",
@@ -353,6 +353,27 @@ def main (args : List String) : IO UInt32 :=
       let (c, _) := viewOverlayFrame ts {} true 500 400 (strokeViews.getD 0 ⟨0, 1, 0, 1⟩) strokePlot strokeList axes white
       check (strokeViews.all fun v =>
         !uploadsCmd (viewOverlayFrame ts c false 500 400 v strokePlot strokeList axes white).2) "uploaded"⟩,
+    ⟨"hiding and showing a held layer uploads nothing and draws what its frame did",
+      let ts := Inkproof.Gpu.tessellateStroke ⟨0, 0⟩
+      let white : Inkproof.Scene.Color := ⟨255, 255, 255, 255⟩
+      let v : View := strokeViews.getD 0 ⟨0, 1, 0, 1⟩
+      let ls := [Layer.stroke strokeList, Layer.stroke #[⟨0, .flat ⟨0, 0, 255, 255⟩, .marker .circle ⟨0.5, 0.5⟩ 3⟩]]
+      let frame (c : Cache) (shown : List Layer) :=
+        viewLayersFrame ts c false 500 400 v strokePlot shown ls #[] white
+      let (c1, all) := frame {} ls
+      let (c2, hidden) := frame c1 (ls.take 1)
+      let (_, again) := frame c2 ls
+      check (uploadsCmd all && !uploadsCmd hidden && !uploadsCmd again && hidden.length < again.length
+        && again == (frame c1 ls).2) "uploaded or changed"⟩,
+    ⟨"layers draw as the concatenated display list does",
+      let ts := Inkproof.Gpu.tessellateStroke ⟨0, 0⟩
+      let white : Inkproof.Scene.Color := ⟨255, 255, 255, 255⟩
+      let v : View := strokeViews.getD 0 ⟨0, 1, 0, 1⟩
+      let a : Inkproof.Scene.DisplayList := strokeList.map fun c => { c with layer := 0 }
+      let b : Inkproof.Scene.DisplayList := #[⟨1, .flat ⟨0, 0, 255, 255⟩, .marker .circle ⟨0.5, 0.5⟩ 3⟩]
+      let layered := (viewLayersFrame ts {} false 500 400 v strokePlot [Layer.stroke a, Layer.stroke b] [] #[] white).2
+      let whole := (viewOverlayFrame ts {} false 500 400 v strokePlot (a ++ b) #[] white).2
+      check (layered == whole) "different commands"⟩,
     ⟨"an overlay is drawn in pixels with stroke vertices",
       let ts := Inkproof.Gpu.tessellateStroke ⟨0, 0⟩
       let axes : Inkproof.Scene.DisplayList :=

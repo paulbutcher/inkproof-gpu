@@ -132,6 +132,41 @@ def viewOverlayFrame (tess : Scene.Command → List UInt32) (c : Cache) (fresh :
   let r := compileCmds tess c [viewTile w h v plot list, pixelStrokeTile w h overlay]
   (r.1, frameSetup fresh bg ++ r.2)
 
+/-- A display list tessellated once. Its vertex words are kept with it, so a frame that draws it tessellates nothing and, while the cache holds its buffers, uploads nothing. -/
+structure Layer where
+  list : Scene.DisplayList
+  words : List (List UInt32)
+
+/-- The layer of `list` whose words are `tess`'s, one per command in paint order. -/
+def Layer.build (tess : Scene.Command → List UInt32) (list : Scene.DisplayList) : Layer :=
+  ⟨list, list.paintOrder.map tess⟩
+
+/-- The layer of `list` tessellated by `tessellateStroke`, as `strokeFrame` and `viewFrame` draw it. -/
+def Layer.stroke (list : Scene.DisplayList) : Layer :=
+  Layer.build (tessellateStroke ⟨0, 0⟩) list
+
+/-- The tile of a layer in device pixels, as `pixelStrokeTile` but with the layer's words. -/
+def Layer.pixelTile (w h : Nat) (l : Layer) : Tile :=
+  { Inkproof.Gpu.pixelStrokeTile w h l.list with words := some l.words }
+
+/-- The tile of a layer in data coordinates under a view, as `viewTile` but with the layer's words. -/
+def Layer.viewTile (w h : Nat) (v : View) (plot : Scene.Rect) (l : Layer) : Tile :=
+  { Inkproof.Gpu.viewTile w h v plot l.list with words := some l.words }
+
+/-- The commands of one frame of `layers` in device pixels on a `w` by `h` target cleared to `bg`, drawn in the order given, as `strokeFrame` draws their concatenation. The buffers of `held` stay resident without being drawn, so that a frame that draws them later uploads nothing: a legend toggle hides a layer by leaving it out of `layers` and keeping it in `held`. `tess` should be `tessellateStroke`'s, the one the layers were built with. -/
+def strokeLayersFrame (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) (w h : Nat)
+    (layers held : List Layer) (bg : Scene.Color) : Cache × List Cmd :=
+  let r := compileKeeping tess c (held.map (·.words)) (layers.map (Layer.pixelTile w h))
+  (r.1, frameSetup fresh bg ++ r.2.map Op.toCmd)
+
+/-- The commands of one frame of `layers`, in data coordinates, under `v`, and `overlay`, in device pixels from the top left, on a `w` by `h` target cleared to `bg`. The layers are drawn in the order given, then the overlay, and only the overlay is tessellated. The buffers of `held` stay resident without being drawn. -/
+def viewLayersFrame (tess : Scene.Command → List UInt32) (c : Cache) (fresh : Bool) (w h : Nat)
+    (v : View) (plot : Scene.Rect) (layers held : List Layer) (overlay : Scene.DisplayList)
+    (bg : Scene.Color) : Cache × List Cmd :=
+  let r := compileKeeping tess c (held.map (·.words))
+    (layers.map (Layer.viewTile w h v plot) ++ [pixelStrokeTile w h overlay])
+  (r.1, frameSetup fresh bg ++ r.2.map Op.toCmd)
+
 /-- The wire bytes of a fresh frame of `list`, in data coordinates, under `v`, with strips and markers sized in pixels. -/
 def viewFrameBytes (w h : Nat) (v : View) (plot : Scene.Rect) (list : Scene.DisplayList)
     (bg : Scene.Color) : ByteArray :=
