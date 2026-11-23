@@ -31,15 +31,36 @@ def chainTriangles {α : Type} (single : α → List Tri) (join : α → α → 
 /-- The corner offset of the octagon around a circle, as a fraction of the radius. It is `tan (π / 8)`, rounded up. -/
 private def octagonSlope : Rat := 4143 / 10000
 
-/-- The regular octagon around the circle of radius `r` about `c`, as a fan from the centre. It contains the circle, and its corners lie up to about 8% of the radius outside it. Containment is checked by a test, not proved: it needs a case split over the eight sectors, each with a nonlinear bound on `x² + y² ≤ r²` that `grind` and `nlinarith`-style attempts did not close in a few tries. -/
-def octagonTriangles (c : Pt) (r : Rat) : List Tri :=
-  let k := octagonSlope * r
-  let v : List Pt :=
-    [⟨c.x + r, c.y - k⟩, ⟨c.x + r, c.y + k⟩, ⟨c.x + k, c.y + r⟩, ⟨c.x - k, c.y + r⟩,
-     ⟨c.x - r, c.y + k⟩, ⟨c.x - r, c.y - k⟩, ⟨c.x - k, c.y - r⟩, ⟨c.x + k, c.y - r⟩]
+/-- How far, in the units of the radius, a circle's drawn edge may lie outside it. -/
+def discTolerance : Rat := 1 / 4
+
+/-- The number of tangent points in each quarter of the polygon about a circle of radius `r`: the fewest, from two to 64, with `5 r / 4 ≤ m²`, for which its corners lie within `discTolerance` of the circle (a corner of a regular polygon of `4m` sides is `r * π² / (32 m²)` out), so a radius of up to about 3 has the eight triangles of an octagon. -/
+def discQuarter (r : Rat) : Nat :=
+  ((List.range' 2 63).find? fun (m : Nat) => r * 5 / 4 ≤ (m : Rat) * (m : Rat)).getD 64
+
+/-- A rational approximation of `tan x` for `0 ≤ x ≤ π / 4`, within 0.0003 (Padé). -/
+private def tanApprox (x : Rat) : Rat := x * (15 - x ^ 2) / (15 - 6 * x ^ 2)
+
+/-- The `4m` points of the unit circle at which the polygon is tangent to it, from `(1, 0)` anticlockwise and evenly spaced in angle to within the approximation of `tanApprox`. A point of angle `2 * atan t` is `((1 - t²) / (1 + t²), 2t / (1 + t²))`, so it is rational and exactly on the circle. -/
+def discTangents (m : Nat) : List (Rat × Rat) :=
+  let q := (List.range m).map fun (j : Nat) =>
+    let t := tanApprox ((355 / 113 : Rat) * (j : Rat) / (4 * (m : Rat)))
+    ((1 - t ^ 2) / (1 + t ^ 2), 2 * t / (1 + t ^ 2))
+  q ++ q.map (fun p => (-p.2, p.1)) ++ q.map (fun p => (-p.1, -p.2)) ++ q.map (fun p => (p.2, -p.1))
+
+/-- The corners of the polygon about the unit circle that is tangent to it at `discTangents m`, in order: the corner between tangent points `a` and `b` is `(a + b) / (1 + a . b)`, where their tangent lines meet. The polygon contains the disc. -/
+def discRing (m : Nat) : List (Rat × Rat) :=
+  let t := discTangents m
+  (t.zip (t.drop 1 ++ t.take 1)).map fun (a, b) =>
+    let k := 1 + a.1 * b.1 + a.2 * b.2
+    ((a.1 + b.1) / k, (a.2 + b.2) / k)
+
+/-- The triangles of the polygon about the circle of radius `r` about `c`, a fan from the centre over `discRing`. It contains the disc, and its corners lie at most `discTolerance` outside it. That it contains the disc is checked by a test, not proved: the fan is `4m` triangles for a count that depends on `r`, and a point of the disc must be placed in the sector of its angle, which needs the cyclic order of the corners; no proof of that for every `m` was found, and the tangent lines alone give only that the disc lies in the polygon, not in the fan. -/
+def discTriangles (c : Pt) (r : Rat) : List Tri :=
+  let v := (discRing (discQuarter r)).map fun p => (⟨c.x + r * p.1, c.y + r * p.2⟩ : Pt)
   (v.zip (v.drop 1 ++ v.take 1)).map fun (a, b) => ⟨c, a, b⟩
 
-/-- The triangles that cover a shape, in grid coordinates. A clipped shape gives the triangles of what it clips, so a scissor is needed to keep the drawing inside the box. A circle is drawn as an octagon about it and text as its box. -/
+/-- The triangles that cover a shape, in grid coordinates. A clipped shape gives the triangles of what it clips, so a scissor is needed to keep the drawing inside the box. A circle is drawn as a polygon about it and text as its box. -/
 def triangles : Shape → List Tri
   | .strip hw items => stripTriangles hw items
   | .envelope items =>
@@ -50,7 +71,7 @@ def triangles : Shape → List Tri
       (fun a b => areaTriangles a.x b.x y0 a.y b.y) items
   | .rect b => boxTriangles b.x0 b.y0 b.x1 b.y1
   | .marker .square c r => boxTriangles (c.x - r) (c.y - r) (c.x + r) (c.y + r)
-  | .marker .circle c r => octagonTriangles c r
+  | .marker .circle c r => discTriangles c r
   | .text b _ => boxTriangles b.x0 b.y0 b.x1 b.y1
   | .clipped _ s => triangles s
 
@@ -95,7 +116,7 @@ def squareVertices (c : Pt) : List Vtx :=
   [⟨c, ⟨1, 0⟩, -1, -1⟩, ⟨c, ⟨1, 0⟩, 1, -1⟩, ⟨c, ⟨1, 0⟩, -1, 1⟩,
    ⟨c, ⟨1, 0⟩, 1, 1⟩, ⟨c, ⟨1, 0⟩, -1, 1⟩, ⟨c, ⟨1, 0⟩, 1, -1⟩]
 
-/-- The vertices of the octagon about the circle about `c`, as a fan from the centre, with corners in units of the radius along and across `d`; the same octagon as `octagonTriangles` when `d` is along an axis. -/
+/-- The vertices of the octagon about the circle about `c`, as a fan from the centre, with corners in units of the radius along and across `d`. -/
 def octagonVertices (c d : Pt) : List Vtx :=
   let k := octagonSlope
   let v : List (Rat × Rat) :=
@@ -103,6 +124,12 @@ def octagonVertices (c d : Pt) : List Vtx :=
   let ring := v ++ v.take 1
   (ring.zip (ring.drop 1)).flatMap fun (a, b) =>
     [⟨c, d, 0, 0⟩, ⟨c, d, a.1, a.2⟩, ⟨c, d, b.1, b.2⟩]
+
+/-- The vertices of the polygon of `discTriangles` about `c` for a circle of radius `r`, with corners in units of the radius, as a fan from the centre. -/
+def discVertices (r : Rat) (c : Pt) : List Vtx :=
+  let ring := discRing (discQuarter r)
+  (ring.zip (ring.drop 1 ++ ring.take 1)).flatMap fun (a, b) =>
+    [⟨c, ⟨1, 0⟩, 0, 0⟩, ⟨c, ⟨1, 0⟩, a.1, a.2⟩, ⟨c, ⟨1, 0⟩, b.1, b.2⟩]
 
 /-- The half of the octagon about `c` that lies ahead of `c` along `d`, as a fan from the centre. Its straight edge is across `d` through `c`, with the corners that the rectangle about a segment has at its end, so a cap and a segment that meet there share an edge and cover nothing twice. -/
 def capVertices (c d : Pt) : List Vtx :=
@@ -134,7 +161,7 @@ def stripVertices (items : List (Item Pt)) : List Vtx := stripVerticesFrom none 
 def strokeVertices : Shape → List Vtx
   | .strip _ items => stripVertices items
   | .marker .square c _ => squareVertices c
-  | .marker .circle c _ => octagonVertices c ⟨1, 0⟩
+  | .marker .circle c r => discVertices r c
   | .clipped _ s => strokeVertices s
   | s => (triangles s).flatMap fun t => [Vtx.plain t.a, Vtx.plain t.b, Vtx.plain t.c]
 

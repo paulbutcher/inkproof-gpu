@@ -42,6 +42,8 @@ def discPoints (c : Pt) (r : Int) : List Pt :=
   (ks.flatMap fun i => ks.map fun j => (i, j)).filterMap fun (i, j) =>
     if i * i + j * j ≤ r * r then some ⟨c.x + i, c.y + j⟩ else none
 
+def discRadii : List Int := [1, 2, 3, 5, 10, 30, 60]
+
 open Inkproof.Scene in
 def shapes : List Shape :=
   [.rect ⟨1, 2, 5, 9⟩, .marker .circle ⟨3, 4⟩ 2, .marker .square ⟨3, 4⟩ 2,
@@ -252,9 +254,27 @@ def main (args : List String) : IO UInt32 :=
     ⟨"moving the origin to the shape gives the shape at the origin",
       check (tessellate ⟨4, 8⟩ ⟨0, .flat ⟨0, 0, 0, 255⟩, .rect ⟨5, 9, 7, 10⟩⟩ ==
         tessellate ⟨0, 0⟩ ⟨0, .flat ⟨0, 0, 0, 255⟩, .rect ⟨1, 1, 3, 2⟩⟩) "differs"⟩,
-    ⟨"the octagon contains the circle",
-      check ((discPoints ⟨3, -2⟩ 10).all fun p =>
-        (Inkproof.Gpu.triangles (.marker .circle ⟨3, -2⟩ 10)).any (inTri · p)) "point outside"⟩,
+    ⟨"a circle's polygon contains the disc",
+      check (discRadii.all fun r =>
+        (discPoints ⟨3, -2⟩ r).all fun p =>
+          (Inkproof.Gpu.triangles (.marker .circle ⟨3, -2⟩ r)).any (inTri · p)) "point outside"⟩,
+    ⟨"a circle's edges are never inside the circle and its corners at most the tolerance outside it",
+      check (discRadii.all fun r =>
+        let c : Inkproof.Scene.Pt := ⟨3, -2⟩
+        (Inkproof.Gpu.triangles (.marker .circle c r)).all fun t =>
+          let sq (p : Inkproof.Scene.Pt) : Rat := (p.x - c.x) ^ 2 + (p.y - c.y) ^ 2
+          let cross := (t.b.x - c.x) * (t.c.y - c.y) - (t.b.y - c.y) * (t.c.x - c.x)
+          let len2 := (t.c.x - t.b.x) ^ 2 + (t.c.y - t.b.y) ^ 2
+          cross ^ 2 ≥ r ^ 2 * len2 && sq t.b ≤ (r + Inkproof.Gpu.discTolerance) ^ 2) "edge or corner off"⟩,
+    ⟨"a circle drawn by the vertex shader is the same polygon, scaled by its radius",
+      check (discRadii.all fun r =>
+        let vs := Inkproof.Gpu.strokeVertices (.marker .circle ⟨3, -2⟩ r)
+        vs.length == 3 * (Inkproof.Gpu.triangles (.marker .circle ⟨3, -2⟩ r)).length &&
+        (Inkproof.Gpu.triangles (.marker .circle ⟨3, -2⟩ r)).flatMap (fun t => [t.a, t.b, t.c]) ==
+          vs.map fun v => (⟨v.pos.x + r * v.kx, v.pos.y + r * v.ky⟩ : Inkproof.Scene.Pt)) "differs"⟩,
+    ⟨"a small circle has no more triangles than an octagon",
+      check ([1, 2, 3].all fun (r : Rat) =>
+        (Inkproof.Gpu.triangles (.marker .circle ⟨0, 0⟩ r)).length ≤ 8) "more than eight"⟩,
     ⟨"each draw is set up with its colour and scissor",
       let t : Tile := ⟨#[⟨0, .flat ⟨255, 0, 0, 255⟩, .clipped ⟨0, 0, 1, 1⟩ (.rect ⟨0, 0, 4, 4⟩)⟩,
         ⟨1, .flat ⟨0, 0, 0, 0⟩, .rect ⟨0, 0, 1, 1⟩⟩], [0], [0], [], 2, fun _ => [0], fun _ => [7, 7, 7, 7], ⟨0, 0⟩⟩

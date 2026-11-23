@@ -49,7 +49,7 @@ theorem strokeSize_clipped (b : Rect) (s : Shape) : strokeSize (.clipped b s) = 
 theorem strokeSizeWords_eq (s : Shape) :
     strokeSizeWords s = [(ratToFloat32 (strokeSize s)).toBits] := rfl
 
-/-- A segment, a square marker and a circle marker have 6, 6 and 24 vertices. -/
+/-- A segment and a square marker have 6 vertices. -/
 theorem segVertices_length (a b : Pt) : (segVertices a b).length = 6 := rfl
 
 theorem Vtx.plain_eq (p : Pt) : Vtx.plain p = ⟨p, ⟨1, 0⟩, 0, 0⟩ := rfl
@@ -98,7 +98,72 @@ theorem tessellate_length (origin : Pt) (c : Command) :
   | nil => rfl
   | cons t ts ih => simp only [List.map_cons, List.flatten_cons, List.length_append, ih, List.length_cons]; rw [triWords_length]; grind
 
-theorem octagonTriangles_length (c : Pt) (r : Rat) : (octagonTriangles c r).length = 8 := rfl
+/-- The tangent points are the first quarter, `j` steps of `π / (2 m)` through the Padé approximation of the tangent, followed by its rotations by a quarter, a half and three quarters of a turn. -/
+theorem discTangents_eq (m : Nat) :
+    discTangents m =
+      let q := (List.range m).map fun (j : Nat) =>
+        let x := (355 / 113 : Rat) * (j : Rat) / (4 * (m : Rat))
+        let t := x * (15 - x ^ 2) / (15 - 6 * x ^ 2)
+        ((1 - t ^ 2) / (1 + t ^ 2), 2 * t / (1 + t ^ 2))
+      q ++ q.map (fun p => (-p.2, p.1)) ++ q.map (fun p => (-p.1, -p.2)) ++ q.map (fun p => (p.2, -p.1)) := rfl
+
+theorem discTangents_length (m : Nat) : (discTangents m).length = 4 * m := by
+  simp [discTangents]; omega
+
+/-- The consecutive pairs of a ring, the last with the first, are as many as its items. -/
+theorem ring_pairs_length {α : Type} (l : List α) : (l.zip (l.drop 1 ++ l.take 1)).length = l.length := by
+  rw [List.length_zip, List.length_append, List.length_drop, List.length_take]; omega
+
+theorem discRing_length (m : Nat) : (discRing m).length = 4 * m := by
+  simp only [discRing, List.length_map, ring_pairs_length, discTangents_length]
+
+/-- A circle's polygon has `4m` triangles, with `m` the quarter count that its radius gives. -/
+theorem discTriangles_length (c : Pt) (r : Rat) : (discTriangles c r).length = 4 * discQuarter r := by
+  simp only [discTriangles, List.length_map, ring_pairs_length, discRing_length]
+
+/-- A radius of up to 3 has the eight triangles of an octagon. -/
+theorem discTriangles_small (c : Pt) {r : Rat} (h : r ≤ 3) : (discTriangles c r).length = 8 := by
+  have : discQuarter r = 2 := by
+    have h2 : r * 5 / 4 ≤ ((2 : Nat) : Rat) * ((2 : Nat) : Rat) := by push_cast; grind
+    have h3 : decide (r * 5 / 4 ≤ ((2 : Nat) : Rat) * ((2 : Nat) : Rat)) = true := decide_eq_true h2
+    have h4 : List.range' 2 63 = 2 :: List.range' 3 62 := rfl
+    simp only [discQuarter, h4, List.find?_cons, h3]
+    rfl
+  rw [discTriangles_length, this]
+
+/-- The quarter count is the first `m` from two with `5 r / 4 ≤ m²`, or 64 if none up to 63 has. -/
+theorem discQuarter_eq (r : Rat) :
+    discQuarter r = ((List.range' 2 63).find? fun (m : Nat) => r * 5 / 4 ≤ (m : Rat) * (m : Rat)).getD 64 := rfl
+
+/-- A circle's polygon is the fan from its centre over the scaled and shifted corners of `discRing`. -/
+theorem discTriangles_eq (c : Pt) (r : Rat) :
+    discTriangles c r =
+      (let v := (discRing (discQuarter r)).map fun p => (⟨c.x + r * p.1, c.y + r * p.2⟩ : Pt)
+       (v.zip (v.drop 1 ++ v.take 1)).map fun (a, b) => ⟨c, a, b⟩) := rfl
+
+/-- The corners are where the tangent lines at consecutive tangent points meet. -/
+theorem discRing_eq (m : Nat) :
+    discRing m =
+      ((discTangents m).zip ((discTangents m).drop 1 ++ (discTangents m).take 1)).map fun (a, b) =>
+        ((a.1 + b.1) / (1 + a.1 * b.1 + a.2 * b.2), (a.2 + b.2) / (1 + a.1 * b.1 + a.2 * b.2)) := rfl
+
+/-- The vertices of a circle are three per corner pair of `discRing`: the centre, then the pair, in units of the radius. -/
+theorem discVertices_eq (r : Rat) (c : Pt) :
+    discVertices r c =
+      (let ring := discRing (discQuarter r)
+       (ring.zip (ring.drop 1 ++ ring.take 1)).flatMap fun (a, b) =>
+         [⟨c, ⟨1, 0⟩, 0, 0⟩, ⟨c, ⟨1, 0⟩, a.1, a.2⟩, ⟨c, ⟨1, 0⟩, b.1, b.2⟩]) := rfl
+
+theorem discVertices_length (r : Rat) (c : Pt) : (discVertices r c).length = 12 * discQuarter r := by
+  have key : ∀ l : List ((Rat × Rat) × (Rat × Rat)),
+      (l.flatMap fun (a, b) => ([⟨c, ⟨1, 0⟩, 0, 0⟩, ⟨c, ⟨1, 0⟩, a.1, a.2⟩, ⟨c, ⟨1, 0⟩, b.1, b.2⟩] : List Vtx)).length
+        = 3 * l.length := by
+    intro l; induction l with
+    | nil => rfl
+    | cons x l ih => simp only [List.flatMap_cons, List.length_append, ih, List.length_cons, List.length_nil]; omega
+  unfold discVertices
+  simp only []
+  rw [key, ring_pairs_length, discRing_length]; omega
 
 theorem between_param {a b v : Rat} (h : Between a b v) :
     ∃ s : Rat, 0 ≤ s ∧ s ≤ 1 ∧ v = a + s * (b - a) := by
@@ -282,7 +347,7 @@ theorem chain_sub_chainTriangles {α : Type} {single : α → Region} {join : α
   obtain ⟨t, ht, hr⟩ := hc p hp
   exact ⟨t, by simp only [chainTriangles, List.mem_flatten]; exact ⟨l, hl, ht⟩, hr⟩
 
-/-- The shapes whose triangles are known to cover them: all but circles, which the octagon covers but without a proof, and strips of no width, which Scene's triangles do not cover. -/
+/-- The shapes whose triangles are known to cover them: all but circles, whose polygon covers them but without a proof (see `discTriangles`), and strips of no width, which Scene's triangles do not cover. -/
 def Polygonal : Shape → Prop
   | .strip hw _ => 0 < hw
   | .marker .circle _ _ => False
@@ -322,7 +387,7 @@ theorem strokeVertices_square (c : Pt) (r : Rat) :
     strokeVertices (.marker .square c r) = squareVertices c := rfl
 
 theorem strokeVertices_circle (c : Pt) (r : Rat) :
-    strokeVertices (.marker .circle c r) = octagonVertices c ⟨1, 0⟩ := rfl
+    strokeVertices (.marker .circle c r) = discVertices r c := rfl
 
 /-- A segment is the two triangles of the rectangle about it: four corners at its ends, each end twice or once, with no extension along it. -/
 theorem segVertices_eq (a b : Pt) :

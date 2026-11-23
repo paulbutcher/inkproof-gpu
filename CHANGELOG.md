@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.19.0]
+
+- A circle marker is a polygon about the circle with a side count that follows its radius, within a quarter of a unit of the circle, instead of an octagon; `octagonTriangles` is replaced by `discTriangles` and `discVertices`.
+
 ## [0.18.0]
 
 - `strokeFrame` and `strokeFrameBytes` draw a frame in device pixels with strips and markers at exactly their size, where `frameBytes` draws Scene's wider conservative triangles.

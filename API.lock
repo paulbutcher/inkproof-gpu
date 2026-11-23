@@ -317,6 +317,22 @@ theorem Inkproof.Gpu.deltaSum_nil : ∀ (f : Inkproof.Scene.Color → UInt8) (t 
 def Inkproof.Gpu.deltaWords : Inkproof.Scene.Color → Inkproof.Scene.Color → List UInt32
 theorem Inkproof.Gpu.deltaWords_eq : ∀ (a b : Inkproof.Scene.Color), Inkproof.Gpu.deltaWords a b = List.map (fun x => match x with | (x, y) => (Inkproof.Gpu.ratToFloat32 (↑(↑y.toNat - ↑x.toNat) / 255)).toBits) [(a.r, b.r), (a.g, b.g), (a.b, b.b), (a.a, b.a)]
 theorem Inkproof.Gpu.deltaWords_length : ∀ (a b : Inkproof.Scene.Color), (Inkproof.Gpu.deltaWords a b).length = 4
+def Inkproof.Gpu.discQuarter : Rat → Nat
+theorem Inkproof.Gpu.discQuarter_eq : ∀ (r : Rat), Inkproof.Gpu.discQuarter r = (List.find? (fun m => Decidable.decide (r * 5 / 4 ≤ ↑m * ↑m)) (List.range' 2 63)).getD 64
+def Inkproof.Gpu.discRing : Nat → List (Rat × Rat)
+theorem Inkproof.Gpu.discRing_eq : ∀ (m : Nat), Inkproof.Gpu.discRing m = List.map (fun x => match x with | (a, b) => ((a.fst + b.fst) / (1 + a.fst * b.fst + a.snd * b.snd), (a.snd + b.snd) / (1 + a.fst * b.fst + a.snd * b.snd))) ((Inkproof.Gpu.discTangents m).zip (List.drop 1 (Inkproof.Gpu.discTangents m) ++ List.take 1 (Inkproof.Gpu.discTangents m)))
+theorem Inkproof.Gpu.discRing_length : ∀ (m : Nat), (Inkproof.Gpu.discRing m).length = 4 * m
+def Inkproof.Gpu.discTangents : Nat → List (Rat × Rat)
+theorem Inkproof.Gpu.discTangents_eq : ∀ (m : Nat), Inkproof.Gpu.discTangents m = have q := List.map (fun j => have x := 355 / 113 * ↑j / (4 * ↑m); have t := x * (15 - x ^ 2) / (15 - 6 * x ^ 2); ((1 - t ^ 2) / (1 + t ^ 2), 2 * t / (1 + t ^ 2))) (List.range m); q ++ List.map (fun p => (-p.snd, p.fst)) q ++ List.map (fun p => (-p.fst, -p.snd)) q ++ List.map (fun p => (p.snd, -p.fst)) q
+theorem Inkproof.Gpu.discTangents_length : ∀ (m : Nat), (Inkproof.Gpu.discTangents m).length = 4 * m
+def Inkproof.Gpu.discTolerance : Rat
+def Inkproof.Gpu.discTriangles : Inkproof.Scene.Pt → Rat → List Inkproof.Scene.Tri
+theorem Inkproof.Gpu.discTriangles_eq : ∀ (c : Inkproof.Scene.Pt) (r : Rat), Inkproof.Gpu.discTriangles c r = have v := List.map (fun p => { x := c.x + r * p.fst, y := c.y + r * p.snd }) (Inkproof.Gpu.discRing (Inkproof.Gpu.discQuarter r)); List.map (fun x => match x with | (a, b) => { a := c, b := a, c := b }) (v.zip (List.drop 1 v ++ List.take 1 v))
+theorem Inkproof.Gpu.discTriangles_length : ∀ (c : Inkproof.Scene.Pt) (r : Rat), (Inkproof.Gpu.discTriangles c r).length = 4 * Inkproof.Gpu.discQuarter r
+theorem Inkproof.Gpu.discTriangles_small : ∀ (c : Inkproof.Scene.Pt) {r : Rat}, r ≤ 3 → (Inkproof.Gpu.discTriangles c r).length = 8
+def Inkproof.Gpu.discVertices : Rat → Inkproof.Scene.Pt → List Inkproof.Gpu.Vtx
+theorem Inkproof.Gpu.discVertices_eq : ∀ (r : Rat) (c : Inkproof.Scene.Pt), Inkproof.Gpu.discVertices r c = have ring := Inkproof.Gpu.discRing (Inkproof.Gpu.discQuarter r); List.flatMap (fun x => match x with | (a, b) => [{ pos := c, dir := { x := 1, y := 0 }, kx := 0, ky := 0 }, { pos := c, dir := { x := 1, y := 0 }, kx := a.fst, ky := a.snd }, { pos := c, dir := { x := 1, y := 0 }, kx := b.fst, ky := b.snd }]) (ring.zip (List.drop 1 ring ++ List.take 1 ring))
+theorem Inkproof.Gpu.discVertices_length : ∀ (r : Rat) (c : Inkproof.Scene.Pt), (Inkproof.Gpu.discVertices r c).length = 12 * Inkproof.Gpu.discQuarter r
 def Inkproof.Gpu.encode : List Inkproof.Gpu.Cmd → List UInt8
 def Inkproof.Gpu.encodeArgs : List Inkproof.Gpu.Arg → List UInt8
 theorem Inkproof.Gpu.evalStops_close : ∀ (f : Inkproof.Scene.Color → UInt8), (∀ (a b : Inkproof.Scene.Color) (w : Rat), f (a.lerp b w) = Inkproof.Scene.lerpChannel (f a) (f b) w) → ∀ (rest : List Inkproof.Scene.Stop) (s : Inkproof.Scene.Stop), List.Pairwise (fun x1 x2 => x1.pos < x2.pos) (s :: rest) → ∀ (t : Rat), ↑(f (Inkproof.Scene.evalStops s rest t)).toNat - (↑(f s.color).toNat + Inkproof.Gpu.deltaSum f t s rest) ≤ 1 / 2 ∧ -(1 / 2) ≤ ↑(f (Inkproof.Scene.evalStops s rest t)).toNat - (↑(f s.color).toNat + Inkproof.Gpu.deltaSum f t s rest)
@@ -366,8 +382,6 @@ def Inkproof.Gpu.jsSpecCase : Inkproof.Gpu.Spec → String
 theorem Inkproof.Gpu.jsSpecCase_eq : ∀ (s : Inkproof.Gpu.Spec), Inkproof.Gpu.jsSpecCase s = ToString.toString " case " ++ ToString.toString s.op ++ ToString.toString ": return { op: " ++ ToString.toString s.op ++ ToString.toString ", name: \"" ++ ToString.toString s.name ++ ToString.toString "\", args: [" ++ ToString.toString (", ".intercalate (List.map Inkproof.Gpu.FieldTy.jsRead s.fields)) ++ ToString.toString "] };"
 def Inkproof.Gpu.le32 : UInt32 → List UInt8
 theorem Inkproof.Gpu.mem_itemsOps : ∀ (prev : Option Inkproof.Gpu.Gradient) (L : List Inkproof.Gpu.Item) (o : Inkproof.Gpu.Op), o ∈ Inkproof.Gpu.itemsOps prev L → ∃ i, i ∈ L ∧ o ∈ Inkproof.Gpu.Item.ops Option.none i
-def Inkproof.Gpu.octagonTriangles : Inkproof.Scene.Pt → Rat → List Inkproof.Scene.Tri
-theorem Inkproof.Gpu.octagonTriangles_length : ∀ (c : Inkproof.Scene.Pt) (r : Rat), (Inkproof.Gpu.octagonTriangles c r).length = 8
 def Inkproof.Gpu.octagonVertices : Inkproof.Scene.Pt → Inkproof.Scene.Pt → List Inkproof.Gpu.Vtx
 theorem Inkproof.Gpu.octagonVertices_eq : ∀ (c d : Inkproof.Scene.Pt), Inkproof.Gpu.octagonVertices c d = have k := 4143 / 10000; have v := [(1, -k), (1, k), (k, 1), (-k, 1), (-1, k), (-1, -k), (-k, -1), (k, -1)]; have ring := v ++ List.take 1 v; List.flatMap (fun x => match x with | (a, b) => [{ pos := c, dir := d, kx := 0, ky := 0 }, { pos := c, dir := d, kx := a.fst, ky := a.snd }, { pos := c, dir := d, kx := b.fst, ky := b.snd }]) (ring.zip (List.drop 1 ring))
 theorem Inkproof.Gpu.octagonVertices_length : ∀ (c d : Inkproof.Scene.Pt), (Inkproof.Gpu.octagonVertices c d).length = 24
@@ -393,6 +407,7 @@ def Inkproof.Gpu.programHandle : UInt32
 theorem Inkproof.Gpu.programHandle_eq : Inkproof.Gpu.programHandle = 0
 def Inkproof.Gpu.ratToFloat32 : Rat → Float32
 theorem Inkproof.Gpu.region_sub_triangles : ∀ (s : Inkproof.Scene.Shape), Inkproof.Gpu.Polygonal s → ∀ (p : Inkproof.Scene.Pt), s.region p → ∃ t, t ∈ Inkproof.Gpu.triangles s ∧ t.region p
+theorem Inkproof.Gpu.ring_pairs_length : ∀ {α : Type} (l : List α), (l.zip (List.drop 1 l ++ List.take 1 l)).length = l.length
 def Inkproof.Gpu.segVertices : Inkproof.Scene.Pt → Inkproof.Scene.Pt → List Inkproof.Gpu.Vtx
 theorem Inkproof.Gpu.segVertices_eq : ∀ (a b : Inkproof.Scene.Pt), Inkproof.Gpu.segVertices a b = [{ pos := a, dir := a.dir b, kx := 0, ky := -1 }, { pos := b, dir := a.dir b, kx := 0, ky := -1 }, { pos := a, dir := a.dir b, kx := 0, ky := 1 }, { pos := b, dir := a.dir b, kx := 0, ky := 1 }, { pos := a, dir := a.dir b, kx := 0, ky := 1 }, { pos := b, dir := a.dir b, kx := 0, ky := -1 }]
 theorem Inkproof.Gpu.segVertices_length : ∀ (a b : Inkproof.Scene.Pt), (Inkproof.Gpu.segVertices a b).length = 6
@@ -440,7 +455,7 @@ theorem Inkproof.Gpu.strokeSize_marker : ∀ (k : Inkproof.Scene.MarkerShape) (c
 theorem Inkproof.Gpu.strokeSize_rect : ∀ (b : Inkproof.Scene.Rect), Inkproof.Gpu.strokeSize (Inkproof.Scene.Shape.rect b) = 0
 theorem Inkproof.Gpu.strokeSize_strip : ∀ (hw : Rat) (items : List (Inkproof.Scene.Item Inkproof.Scene.Pt)), Inkproof.Gpu.strokeSize (Inkproof.Scene.Shape.strip hw items) = hw
 def Inkproof.Gpu.strokeVertices : Inkproof.Scene.Shape → List Inkproof.Gpu.Vtx
-theorem Inkproof.Gpu.strokeVertices_circle : ∀ (c : Inkproof.Scene.Pt) (r : Rat), Inkproof.Gpu.strokeVertices (Inkproof.Scene.Shape.marker Inkproof.Scene.MarkerShape.circle c r) = Inkproof.Gpu.octagonVertices c { x := 1, y := 0 }
+theorem Inkproof.Gpu.strokeVertices_circle : ∀ (c : Inkproof.Scene.Pt) (r : Rat), Inkproof.Gpu.strokeVertices (Inkproof.Scene.Shape.marker Inkproof.Scene.MarkerShape.circle c r) = Inkproof.Gpu.discVertices r c
 theorem Inkproof.Gpu.strokeVertices_clipped : ∀ (b : Inkproof.Scene.Rect) (s : Inkproof.Scene.Shape), Inkproof.Gpu.strokeVertices (Inkproof.Scene.Shape.clipped b s) = Inkproof.Gpu.strokeVertices s
 theorem Inkproof.Gpu.strokeVertices_square : ∀ (c : Inkproof.Scene.Pt) (r : Rat), Inkproof.Gpu.strokeVertices (Inkproof.Scene.Shape.marker Inkproof.Scene.MarkerShape.square c r) = Inkproof.Gpu.squareVertices c
 theorem Inkproof.Gpu.strokeVertices_strip : ∀ (hw : Rat) (items : List (Inkproof.Scene.Item Inkproof.Scene.Pt)), Inkproof.Gpu.strokeVertices (Inkproof.Scene.Shape.strip hw items) = Inkproof.Gpu.stripVertices items
