@@ -71,6 +71,7 @@ structure View where
   x1 : Rat
   y0 : Rat
   y1 : Rat
+  deriving DecidableEq
 
 /-- The map from data x to a pixel column that sends the view's `x0` and `x1` to the left and right of `plot`, a rectangle in pixels from the top left. -/
 def viewX (v : View) (plot : Scene.Rect) : Scale.Affine Rat :=

@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.21.0]
+
+- `strokeLayersBytes` and `viewLayersBytes` replay the recorded draws of a layer drawn before (`Retained`, `Stream`), so a frame costs time in the number of layers, not their commands; `wordsEq` matches buffers in constant time for the same words.
+
 ## [0.20.0]
 
 - `Layer`, `strokeLayersFrame` and `viewLayersFrame` tessellate a display list once and draw chosen layers per frame, keeping hidden ones resident (`compileKeeping`).

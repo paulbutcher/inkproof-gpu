@@ -112,6 +112,12 @@ structure Entry where
   words : List (List UInt32)
   base : Nat
 
+/-- Equality of vertex words, constant time when both are the same object, which a retained layer's words are in every frame. -/
+def wordsEq (a b : List (List UInt32)) : Bool :=
+  withPtrEq a b (fun _ => decide (a = b)) (by intro h; simp [h])
+
+@[simp] theorem wordsEq_eq (a b : List (List UInt32)) : wordsEq a b = decide (a = b) := rfl
+
 /-- The buffers resident on the GPU, and the first handle not yet used. -/
 structure Cache where
   entries : List Entry := []
@@ -225,7 +231,7 @@ structure Stage where
 
 def stageTile (tess : Scene.Command → List UInt32) (s : Stage) (t : Tile) : Stage :=
   let cs := t.cmds tess
-  match s.cache.entries.find? fun e => decide (e.words = cs) with
+  match s.cache.entries.find? fun e => wordsEq e.words cs with
   | some e => { s with items := s.items ++ itemsOf e.base (t.items tess) }
   | none =>
     { cache := { entries := s.cache.entries ++ [⟨cs, s.cache.next⟩], next := s.cache.next + cs.length }
@@ -243,7 +249,7 @@ private theorem Tile.items_eq_itemsFrom (tess : Scene.Command → List UInt32) (
 
 private def stageTileShared (tess : Scene.Command → List UInt32) (s : Stage) (t : Tile) : Stage :=
   let cs := t.cmds tess
-  match s.cache.entries.find? fun e => decide (e.words = cs) with
+  match s.cache.entries.find? fun e => wordsEq e.words cs with
   | some e => { s with items := s.items ++ itemsOf e.base (t.itemsFrom cs) }
   | none =>
     { cache := { entries := s.cache.entries ++ [⟨cs, s.cache.next⟩], next := s.cache.next + cs.length }
@@ -266,11 +272,37 @@ command of each tile in paint order set the state and draw. A buffer in `keep` s
 def compileKeeping (tess : Scene.Command → List UInt32) (c : Cache)
     (keep : List (List (List UInt32))) (tiles : List Tile) : Cache × List Op :=
   let used (e : Entry) : Bool :=
-    keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess)
+    keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess)
   let s := tiles.foldl (stageTile tess)
     ⟨{ c with entries := c.entries.filter used },
       (c.entries.filter (!used ·)).flatMap fun e => deletes e.base e.words.length, []⟩
   (s.cache, s.ops ++ itemsOps none s.items)
+
+/-- The buffers of `cs`: the cached entry that holds them, or a new one uploaded after `ops`. Returns the cache, the operations and the handle of the first buffer. -/
+def stageWords (c : Cache) (ops : List Op) (cs : List (List UInt32)) : Cache × List Op × Nat :=
+  match c.entries.find? fun e => wordsEq e.words cs with
+  | some e => (c, ops, e.base)
+  | none =>
+    ({ entries := c.entries ++ [⟨cs, c.next⟩], next := c.next + cs.length }, ops ++ uploads c.next cs, c.next)
+
+/-- `stageWords` for each of `cmdss` in turn, with the handle of the first buffer of each. -/
+def stageAll : Cache → List Op → List (List (List UInt32)) → Cache × List Op × List Nat
+  | c, ops, [] => (c, ops, [])
+  | c, ops, cs :: rest =>
+    let r := stageWords c ops cs
+    let q := stageAll r.1 r.2.1 rest
+    (q.1, q.2.1, r.2.2 :: q.2.2)
+
+/-- The setup of a frame of tiles whose vertex words are `cmdss`: delete the buffers neither they nor `keep` hold, upload those not cached. Returns the cache, those operations and the handle of the first buffer of each tile. The draws are not included, so a frame that has them already does not build them. -/
+def compileSetup (c : Cache) (keep cmdss : List (List (List UInt32))) : Cache × List Op × List Nat :=
+  let used (e : Entry) : Bool :=
+    keep.any (fun ws => wordsEq e.words ws) || cmdss.any fun cs => wordsEq e.words cs
+  stageAll { c with entries := c.entries.filter used }
+    ((c.entries.filter (!used ·)).flatMap fun e => deletes e.base e.words.length) cmdss
+
+/-- The draws of a tile whose buffers start at handle `b`: for each command in paint order, set the state and draw. -/
+def tileDraws (tess : Scene.Command → List UInt32) (t : Tile) (b : Nat) : List Op :=
+  itemsOps none (itemsOf b (t.items tess))
 
 /-- One frame: delete the buffers no tile uses, upload those of tiles not cached, then for each
 command of each tile in paint order set the state and draw. -/

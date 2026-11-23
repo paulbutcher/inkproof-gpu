@@ -6,6 +6,7 @@ import Inkproof.Gpu.Wire
 import Inkproof.Gpu.Compile
 import Inkproof.Gpu.Gradient
 import Inkproof.Gpu.Frame
+import Inkproof.Gpu.Retained
 import Inkproof.Gpu.Tessellate
 import Inkproof.Gpu.Js
 import Inkproof.Gpu.Shaders

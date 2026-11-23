@@ -10,3 +10,4 @@ import Inkproof.Gpu.Proofs.Tessellate
 import Inkproof.Gpu.Proofs.View
 import Inkproof.Gpu.Proofs.Gradient
 import Inkproof.Gpu.Proofs.Layers
+import Inkproof.Gpu.Proofs.Retained

@@ -213,7 +213,7 @@ theorem compileKeeping_fits (tess : Scene.Command → List UInt32) (c : Cache)
   unfold compileKeeping
   dsimp only
   have hset : ∀ o ∈ ((c.entries.filter fun e =>
-      !(keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
+      !(keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess))).flatMap
         fun e => deletes e.base e.words.length), o.Fits := by
     intro o ho
     simp only [List.mem_flatMap] at ho
@@ -221,9 +221,9 @@ theorem compileKeeping_fits (tess : Scene.Command → List UInt32) (c : Cache)
     exact hdel _ _ o ho
   have hk := key tiles (fun _ h => h)
     ⟨{ c with entries := c.entries.filter fun e =>
-        keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess) },
+        keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess) },
       (c.entries.filter fun e =>
-        !(keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
+        !(keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess))).flatMap
         fun e => deletes e.base e.words.length, []⟩ hset (fun i hi => nomatch hi)
   intro o ho
   simp only [List.mem_append] at ho

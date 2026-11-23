@@ -374,6 +374,23 @@ def main (args : List String) : IO UInt32 :=
       let layered := (viewLayersFrame ts {} false 500 400 v strokePlot [Layer.stroke a, Layer.stroke b] [] #[] white).2
       let whole := (viewOverlayFrame ts {} false 500 400 v strokePlot (a ++ b) #[] white).2
       check (layered == whole) "different commands"⟩,
+    ⟨"retained layers draw what the commands of their frame draw, and replay them",
+      let ts := Inkproof.Gpu.tessellateStroke ⟨0, 0⟩
+      let white : Inkproof.Scene.Color := ⟨255, 255, 255, 255⟩
+      let v : View := strokeViews.getD 0 ⟨0, 1, 0, 1⟩
+      let ls := [Layer.stroke strokeList, Layer.stroke #[⟨0, .flat ⟨0, 0, 255, 255⟩, .marker .circle ⟨0.5, 0.5⟩ 3⟩]]
+      let draws (bs : ByteArray) : Option (List Cmd) :=
+        (decode bs.data.toList).map (·.filter (·.op == 5))
+      let frame (r : Retained) (shown : List Layer) :=
+        viewLayersBytes ts r false 500 400 v strokePlot shown ls #[] white
+      let (r1, b1) := frame {} ls
+      let (r2, b2) := frame r1 (ls.take 1)
+      let (r3, b3) := frame r2 ls
+      let plain (shown : List Layer) :=
+        (viewLayersFrame ts {} false 500 400 v strokePlot shown ls #[] white).2.filter (·.op == 5)
+      check (draws b1 == some (plain ls) && draws b2 == some (plain (ls.take 1)) && draws b3 == some (plain ls)
+        && r3.streams.length == 2 && b3.size > b2.size && b3.size < b1.size
+        && (match decode b3.data.toList with | some cs => !uploadsCmd cs | none => false)) "different draws"⟩,
     ⟨"an overlay is drawn in pixels with stroke vertices",
       let ts := Inkproof.Gpu.tessellateStroke ⟨0, 0⟩
       let axes : Inkproof.Scene.DisplayList :=

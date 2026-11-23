@@ -390,9 +390,9 @@ private theorem compile_eq (tess : Scene.Command → List UInt32) (c : Cache)
     (keep : List (List (List UInt32))) (tiles : List Tile) :
     ∃ s : Stage, s = tiles.foldl (stageTile tess)
       ⟨{ c with entries := c.entries.filter fun e =>
-          keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess) },
+          keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess) },
         (c.entries.filter fun e =>
-          !(keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
+          !(keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess))).flatMap
           fun e => deletes e.base e.words.length, []⟩ ∧
       compileKeeping tess c keep tiles = (s.cache, s.ops ++ itemsOps none s.items) :=
   ⟨_, rfl, rfl⟩
@@ -402,7 +402,7 @@ theorem compileKeeping_eq (tess : Scene.Command → List UInt32) (c : Cache)
     (keep : List (List (List UInt32))) (tiles : List Tile) :
     compileKeeping tess c keep tiles =
       let used (e : Entry) : Bool :=
-        keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess)
+        keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess)
       let s := tiles.foldl (stageTile tess)
         ⟨{ c with entries := c.entries.filter used },
           (c.entries.filter (!used ·)).flatMap fun e => deletes e.base e.words.length, []⟩
@@ -414,12 +414,12 @@ private theorem initial_inv (tess : Scene.Command → List UInt32) (c : Cache)
     (hv : c.Valid g) :
     (Stage.mk
       { c with entries := c.entries.filter fun e =>
-          keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess) }
+          keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess) }
       ((c.entries.filter fun e =>
-          !(keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess))).flatMap
+          !(keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess))).flatMap
           fun e => deletes e.base e.words.length) []).Inv g := by
   have hperm := List.filter_append_perm
-    (fun e : Entry => keep.any (fun ws => decide (e.words = ws)) || tiles.any fun t => decide (e.words = t.cmds tess)) c.entries
+    (fun e : Entry => keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess)) c.entries
   have hpw := (hperm.pairwise_iff (fun h => by omega)).mpr hv.2
   rw [List.pairwise_append] at hpw
   refine ⟨⟨fun e he => ?_, hpw.1⟩, by simp, fun o ho => ?_⟩
@@ -544,7 +544,7 @@ theorem compileKeeping_cached (tess : Scene.Command → List UInt32) (c : Cache)
     | cons t ts ih =>
       intro s h1 h2
       obtain ⟨e, he, hw⟩ := h2 t (List.mem_cons_self ..)
-      have hsome : (s.cache.entries.find? fun e => decide (e.words = t.cmds tess)).isSome := by
+      have hsome : (s.cache.entries.find? fun e => wordsEq e.words (t.cmds tess)).isSome := by
         rw [List.find?_isSome]
         exact ⟨e, he, by simpa using hw⟩
       simp only [List.foldl_cons]
@@ -794,5 +794,131 @@ theorem Item.ops_eq (prev : Option Gradient) (i : Item) :
     i.ops prev = [.uniform 0 i.state.slope, .uniform 1 i.state.offset, .uniform 2 i.state.size,
       .uniform 3 i.state.view, .uniform 4 i.state.colour] ++ i.state.grad.ops prev ++
       [.scissor i.state.scissor, .draw i.handle (i.words.length / i.state.stride) i.state.stride] := rfl
+
+/-- The items of `tiles`, each tile's drawn from the handle in `bases`. -/
+def itemsFor (tess : Scene.Command → List UInt32) : List Tile → List Nat → List Item
+  | t :: ts, b :: bs => itemsOf b (t.items tess) ++ itemsFor tess ts bs
+  | _, _ => []
+
+private theorem stageTile_eq (tess : Scene.Command → List UInt32) (s : Stage) (t : Tile) :
+    stageTile tess s t =
+      ⟨(stageWords s.cache s.ops (t.cmds tess)).1, (stageWords s.cache s.ops (t.cmds tess)).2.1,
+        s.items ++ itemsOf (stageWords s.cache s.ops (t.cmds tess)).2.2 (t.items tess)⟩ := by
+  unfold stageTile stageWords
+  simp only [wordsEq_eq]
+  cases h : s.cache.entries.find? fun e => decide (e.words = t.cmds tess) <;> simp
+
+private theorem foldl_stage_eq (tess : Scene.Command → List UInt32) :
+    ∀ (tiles : List Tile) (s : Stage),
+      tiles.foldl (stageTile tess) s =
+        ⟨(stageAll s.cache s.ops (tiles.map (·.cmds tess))).1, (stageAll s.cache s.ops (tiles.map (·.cmds tess))).2.1,
+          s.items ++ itemsFor tess tiles (stageAll s.cache s.ops (tiles.map (·.cmds tess))).2.2⟩ := by
+  intro tiles
+  induction tiles with
+  | nil => intro s; simp [stageAll, itemsFor]
+  | cons t ts ih =>
+    intro s
+    rw [List.foldl_cons, ih, stageTile_eq]
+    simp [stageAll, itemsFor, List.map_cons, List.append_assoc]
+
+private theorem run_tileDraws (tess : Scene.Command → List UInt32) :
+    ∀ (tiles : List Tile) (bases : List Nat) (g : Gpu),
+      (∀ i ∈ itemsFor tess tiles bases, g.buffers i.handle = some i.words) →
+      (g.run ((tiles.zip bases).flatMap fun p => tileDraws tess p.1 p.2)).log =
+          g.log ++ (itemsFor tess tiles bases).map Item.toDraw ∧
+        (g.run ((tiles.zip bases).flatMap fun p => tileDraws tess p.1 p.2)).buffers = g.buffers := by
+  intro tiles
+  induction tiles with
+  | nil => intro bases g _; simp [itemsFor, Gpu.run]
+  | cons t ts ih =>
+    intro bases g h
+    cases bases with
+    | nil => simp [itemsFor, Gpu.run]
+    | cons b bs =>
+      simp only [itemsFor, List.mem_append] at h
+      obtain ⟨h1, h2⟩ := run_draws g none (itemsOf b (t.items tess)) (by simp)
+        (fun i hi => h i (Or.inl hi))
+      have := ih bs (g.run (tileDraws tess t b)) (fun i hi => by
+        rw [tileDraws, h2]; exact h i (Or.inr hi))
+      simp only [List.zip_cons_cons, List.flatMap_cons, Gpu.run_append, itemsFor, List.map_append]
+      refine ⟨?_, by rw [this.2, tileDraws, h2]⟩
+      rw [this.1, tileDraws, h1, List.append_assoc]
+
+/-- Running the setup of a frame and then each tile's draws, from any GPU the cache is valid for, performs the draws of the tiles in paint order, as `compileKeeping` does, and leaves the cache valid. The draws of a tile are those of `tileDraws` from the handle `compileSetup` gives, so a frame may build them, or reuse them, tile by tile. -/
+theorem compileSetup_log (tess : Scene.Command → List UInt32) (c : Cache)
+    (keep : List (List (List UInt32))) (tiles : List Tile) (g : Gpu)
+    (hsound : ∀ t ∈ tiles, t.Sound tess) (hv : c.Valid g) :
+    let r := compileSetup c keep (tiles.map (·.cmds tess))
+    (g.run (r.2.1 ++ (tiles.zip r.2.2).flatMap fun p => tileDraws tess p.1 p.2)).log =
+        g.log ++ frameDraws tess tiles ∧
+      r.1.Valid (g.run (r.2.1 ++ (tiles.zip r.2.2).flatMap fun p => tileDraws tess p.1 p.2)) := by
+  intro r
+  obtain ⟨hinv, hmap⟩ := foldl_stage tess g tiles _ hsound (initial_inv tess c keep tiles g hv)
+  rw [foldl_stage_eq] at hinv hmap
+  have hr : r = (compileSetup c keep (tiles.map (·.cmds tess))) := rfl
+  have hused : compileSetup c keep (tiles.map (·.cmds tess)) =
+      stageAll
+        ({ c with entries := c.entries.filter fun e =>
+          keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess) })
+        ((c.entries.filter fun e =>
+          !(keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess))).flatMap
+          fun e => deletes e.base e.words.length) (tiles.map (·.cmds tess)) := by
+    simp [compileSetup, List.any_map, Function.comp_def]
+  rw [hr, hused]
+  rw [hused] at hr
+  simp only at hinv hmap
+  obtain ⟨hvalid, hitems, hset⟩ := hinv
+  simp only [List.nil_append] at hitems hmap
+  rw [Gpu.run_append]
+  obtain ⟨hlog, hbuf⟩ := run_tileDraws tess tiles _ _ (fun i hi => (hitems i hi).2)
+  refine ⟨?_, hvalid.congr hbuf⟩
+  rw [hlog, (Gpu.run_setup g _ hset).1]
+  simp only [List.map_nil, List.nil_append] at hmap
+  rw [← hmap]
+
+/-- A cached entry holding the words is reused where it is. -/
+theorem stageWords_some (c : Cache) (ops : List Op) (cs : List (List UInt32)) (e : Entry)
+    (h : c.entries.find? (fun e => decide (e.words = cs)) = some e) :
+    stageWords c ops cs = (c, ops, e.base) := by
+  simp [stageWords, h]
+
+/-- Words no entry holds are uploaded after the cache's last handle. -/
+theorem stageWords_none (c : Cache) (ops : List Op) (cs : List (List UInt32))
+    (h : c.entries.find? (fun e => decide (e.words = cs)) = none) :
+    stageWords c ops cs =
+      ({ entries := c.entries ++ [⟨cs, c.next⟩], next := c.next + cs.length }, ops ++ uploads c.next cs, c.next) := by
+  simp [stageWords, h]
+
+@[simp] theorem stageAll_nil (c : Cache) (ops : List Op) : stageAll c ops [] = (c, ops, []) := rfl
+
+theorem stageAll_cons (c : Cache) (ops : List Op) (cs : List (List UInt32)) (rest : List (List (List UInt32))) :
+    stageAll c ops (cs :: rest) =
+      ((stageAll (stageWords c ops cs).1 (stageWords c ops cs).2.1 rest).1,
+        (stageAll (stageWords c ops cs).1 (stageWords c ops cs).2.1 rest).2.1,
+        (stageWords c ops cs).2.2 :: (stageAll (stageWords c ops cs).1 (stageWords c ops cs).2.1 rest).2.2) := rfl
+
+@[simp] theorem itemsFor_nil (tess : Scene.Command → List UInt32) (bs : List Nat) : itemsFor tess [] bs = [] := by
+  cases bs <;> rfl
+
+@[simp] theorem itemsFor_cons (tess : Scene.Command → List UInt32) (t : Tile) (ts : List Tile) (b : Nat)
+    (bs : List Nat) : itemsFor tess (t :: ts) (b :: bs) = itemsOf b (t.items tess) ++ itemsFor tess ts bs := rfl
+
+theorem stageAll_length (c : Cache) (ops : List Op) (cmdss : List (List (List UInt32))) :
+    (stageAll c ops cmdss).2.2.length = cmdss.length := by
+  induction cmdss generalizing c ops with
+  | nil => simp [stageAll]
+  | cons cs rest ih => simp [stageAll, ih]
+
+/-- The cache after the setup of a frame is the one `compileKeeping` leaves. -/
+theorem compileSetup_cache (tess : Scene.Command → List UInt32) (c : Cache)
+    (keep : List (List (List UInt32))) (tiles : List Tile) :
+    (compileSetup c keep (tiles.map (·.cmds tess))).1 = (compileKeeping tess c keep tiles).1 := by
+  have h := foldl_stage_eq tess tiles
+    ⟨{ c with entries := c.entries.filter fun e =>
+        keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess) },
+      (c.entries.filter fun e =>
+        !(keep.any (fun ws => wordsEq e.words ws) || tiles.any fun t => wordsEq e.words (t.cmds tess))).flatMap
+        fun e => deletes e.base e.words.length, []⟩
+  simp only [compileKeeping, h, compileSetup, List.any_map, Function.comp_def]
 
 end Inkproof.Gpu

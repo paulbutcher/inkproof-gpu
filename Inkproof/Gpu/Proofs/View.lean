@@ -225,20 +225,21 @@ private theorem compile_cached_head (tess : Scene.Command → List UInt32) (c' :
   obtain ⟨e, he, hw⟩ := hd
   intro o ho hu
   let s0 : Stage := ⟨{ c' with entries := c'.entries.filter (fun e =>
-      [d, a].any (fun t => decide (e.words = t.cmds tess))) },
-    (c'.entries.filter (fun e => !([d, a].any (fun t => decide (e.words = t.cmds tess))))).flatMap
+      [d, a].any (fun t => wordsEq e.words (t.cmds tess))) },
+    (c'.entries.filter (fun e => !([d, a].any (fun t => wordsEq e.words (t.cmds tess))))).flatMap
       (fun e => deletes e.base e.words.length), []⟩
   have hs0 : s0 = ⟨{ c' with entries := c'.entries.filter (fun e =>
-      [d, a].any (fun t => decide (e.words = t.cmds tess))) },
-    (c'.entries.filter (fun e => !([d, a].any (fun t => decide (e.words = t.cmds tess))))).flatMap
+      [d, a].any (fun t => wordsEq e.words (t.cmds tess))) },
+    (c'.entries.filter (fun e => !([d, a].any (fun t => wordsEq e.words (t.cmds tess))))).flatMap
       (fun e => deletes e.base e.words.length), []⟩ := rfl
-  have hfind : ∃ e', s0.cache.entries.find? (fun e => decide (e.words = d.cmds tess)) = some e' := by
-    have : (s0.cache.entries.find? fun e => decide (e.words = d.cmds tess)).isSome := by
+  have hfind : ∃ e', s0.cache.entries.find? (fun e => wordsEq e.words (d.cmds tess)) = some e' := by
+    have : (s0.cache.entries.find? fun e => wordsEq e.words (d.cmds tess)).isSome := by
       rw [List.find?_isSome]
       exact ⟨e, by simp [hs0, he, hw], by simpa using hw⟩
     exact Option.isSome_iff_exists.mp this
   obtain ⟨e', he'⟩ := hfind
   have h1 : stageTile tess s0 d = { s0 with items := s0.items ++ itemsOf e'.base (d.items tess) } := by
+    simp only [wordsEq_eq] at he'
     simp [stageTile, he']
   have hops : ∀ o ∈ s0.ops, ¬ o.IsUpload := by
     intro o ho
