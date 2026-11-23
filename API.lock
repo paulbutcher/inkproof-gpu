@@ -418,19 +418,11 @@ instance Inkproof.Gpu.instDecidableEqArg : DecidableEq Inkproof.Gpu.Arg
 def Inkproof.Gpu.instDecidableEqArg.decEq : (x x_1 : Inkproof.Gpu.Arg) → Decidable (x = x_1)
 instance Inkproof.Gpu.instDecidableEqCmd : DecidableEq Inkproof.Gpu.Cmd
 def Inkproof.Gpu.instDecidableEqCmd.decEq : (x x_1 : Inkproof.Gpu.Cmd) → Decidable (x = x_1)
-instance Inkproof.Gpu.instDecidableEqCommand : DecidableEq Inkproof.Scene.Command
-def Inkproof.Gpu.instDecidableEqCommand.decEq : (x x_1 : Inkproof.Scene.Command) → Decidable (x = x_1)
 instance Inkproof.Gpu.instDecidableEqFieldTy : DecidableEq Inkproof.Gpu.FieldTy
 instance Inkproof.Gpu.instDecidableEqGradient : DecidableEq Inkproof.Gpu.Gradient
 def Inkproof.Gpu.instDecidableEqGradient.decEq : (x x_1 : Inkproof.Gpu.Gradient) → Decidable (x = x_1)
-instance Inkproof.Gpu.instDecidableEqItem : {α : Type} → [DecidableEq α] → DecidableEq (Inkproof.Scene.Item α)
-def Inkproof.Gpu.instDecidableEqItem.decEq : {α : Type} → [DecidableEq α] → (x x_1 : Inkproof.Scene.Item α) → Decidable (x = x_1)
 instance Inkproof.Gpu.instDecidableEqOp : DecidableEq Inkproof.Gpu.Op
 def Inkproof.Gpu.instDecidableEqOp.decEq : (x x_1 : Inkproof.Gpu.Op) → Decidable (x = x_1)
-instance Inkproof.Gpu.instDecidableEqShading : DecidableEq Inkproof.Scene.Shading
-def Inkproof.Gpu.instDecidableEqShading.decEq : (x x_1 : Inkproof.Scene.Shading) → Decidable (x = x_1)
-instance Inkproof.Gpu.instDecidableEqShape : DecidableEq Inkproof.Scene.Shape
-def Inkproof.Gpu.instDecidableEqShape.decEq : (x x_1 : Inkproof.Scene.Shape) → Decidable (x = x_1)
 instance Inkproof.Gpu.instDecidableEqState : DecidableEq Inkproof.Gpu.State
 def Inkproof.Gpu.instDecidableEqState.decEq : (x x_1 : Inkproof.Gpu.State) → Decidable (x = x_1)
 instance Inkproof.Gpu.instDecidableEqTileKey : DecidableEq Inkproof.Gpu.TileKey

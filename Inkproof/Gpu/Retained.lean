@@ -6,12 +6,6 @@ import Inkproof.Gpu.Frame
 
 namespace Inkproof.Gpu
 
--- Stand-ins for instances Scene does not derive yet; delete them when it does, or they will clash.
-deriving instance DecidableEq for Scene.Item
-deriving instance DecidableEq for Scene.Shape
-deriving instance DecidableEq for Scene.Shading
-deriving instance DecidableEq for Scene.Command
-
 /-- A run of commands as wire bytes: how many, and each in turn. -/
 structure Piece where
   count : Nat
