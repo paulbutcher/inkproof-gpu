@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.22.1]
+
+- `strokeLayersBytes` and `viewLayersBytes` no longer overflow the stack under Lasm on layers of tens of thousands of commands (`tileDraws` ran `List.zip`).
+
 ## [0.22.0]
 
 - Use Scene v0.29.0's `DecidableEq` instances, dropping this library's own.

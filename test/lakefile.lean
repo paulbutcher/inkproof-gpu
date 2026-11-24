@@ -27,7 +27,9 @@ lean_exe jstests where
 @[test_driver]
 script test do
   let driver ← IO.Process.spawn
-    { cmd := "lake", args := #["exe", "inkproof-tools/inkproof-test-driver"], cwd := __dir__ }
+    { cmd := "lake", args := #["exe", "inkproof-tools/inkproof-test-driver"], cwd := __dir__
+      -- A browser's stack, not the gigabyte Lasm gives Node, so that deep recursion fails here.
+      env := #[("LASM_VM_STACK_MB", some "1")] }
   let a ← driver.wait
   let js ← IO.Process.spawn { cmd := "lake", args := #["exe", "jstests"], cwd := __dir__ }
   let b ← js.wait

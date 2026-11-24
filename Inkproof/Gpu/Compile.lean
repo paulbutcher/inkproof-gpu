@@ -247,6 +247,14 @@ private theorem Tile.items_eq_itemsFrom (tess : Scene.Command → List UInt32) (
   simp only [Tile.items, Tile.itemsFrom]
   rw [List.zip_toArray, List.toList_toArray]
 
+private def Tile.itemsTR (tess : Scene.Command → List UInt32) (t : Tile) : List (List UInt32 × State) :=
+  t.itemsFrom (t.cmds tess)
+
+/-- Constant stack for tiles of many commands, which `List.zip` does not give in the browser. -/
+@[csimp] private theorem Tile.items_eq_itemsTR : @Tile.items = @Tile.itemsTR := by
+  funext tess t
+  exact Tile.items_eq_itemsFrom tess t
+
 private def stageTileShared (tess : Scene.Command → List UInt32) (s : Stage) (t : Tile) : Stage :=
   let cs := t.cmds tess
   match s.cache.entries.find? fun e => wordsEq e.words cs with

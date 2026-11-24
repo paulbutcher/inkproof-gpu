@@ -406,5 +406,13 @@ def main (args : List String) : IO UInt32 :=
         let py := ((ratToFloat32 330) * Float32.ofBits sy + Float32.ofBits oy).toFloat
         check ((((px + 1) / 2 * 500) - 40).abs ≤ 0.5 && (((1 - py) / 2 * 400) - 330).abs ≤ 0.5) "off"
       | _, _, _ => check false "no stroke draw"⟩,
+    ⟨"retained layers of tens of thousands of markers are encoded",
+      let white : Inkproof.Scene.Color := ⟨255, 255, 255, 255⟩
+      let layers := [0, 1, 2, 3].map fun (k : Int) => Layer.stroke <| (Array.range 10000).map fun i =>
+        (⟨0, .flat ⟨0, 0, 0, 255⟩, Inkproof.Scene.Shape.marker .circle ⟨Int.ofNat i + k, 0⟩ 2⟩ : Inkproof.Scene.Command)
+      let v : View := strokeViews.getD 0 ⟨0, 1, 0, 1⟩
+      let (_, a) := strokeLayersBytes {} true 1920 600 layers layers white
+      let (_, b) := viewLayersBytes (Inkproof.Gpu.tessellateStroke ⟨0, 0⟩) {} true 1920 600 v strokePlot layers layers #[] white
+      check (a.size > 20000000 && b.size > 20000000) s!"{a.size} {b.size}"⟩,
     ⟨"unknown opcode is rejected", check (decode (encode [⟨200, []⟩]) == none) "accepted"⟩
   ]
