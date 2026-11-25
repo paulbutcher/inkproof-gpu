@@ -313,8 +313,13 @@ constructor Inkproof.Gpu.Vtx.mk : Inkproof.Scene.Pt → Inkproof.Scene.Pt → Ra
 def Inkproof.Gpu.Vtx.plain : Inkproof.Scene.Pt → Inkproof.Gpu.Vtx
 theorem Inkproof.Gpu.Vtx.plain_eq : ∀ (p : Inkproof.Scene.Pt), Inkproof.Gpu.Vtx.plain p = { pos := p, dir := { x := 1, y := 0 }, kx := 0, ky := 0 }
 field Inkproof.Gpu.Vtx.pos : Inkproof.Gpu.Vtx → Inkproof.Scene.Pt
+def Inkproof.Gpu.Vtx.posWords : Inkproof.Scene.Pt → Inkproof.Gpu.Vtx → List UInt32
+theorem Inkproof.Gpu.Vtx.posWords_eq : ∀ (origin : Inkproof.Scene.Pt) (v : Inkproof.Gpu.Vtx), Inkproof.Gpu.Vtx.posWords origin v = [(Inkproof.Gpu.ratToFloat32 (v.pos.x - origin.x)).toBits, (Inkproof.Gpu.ratToFloat32 (v.pos.y - origin.y)).toBits]
+def Inkproof.Gpu.Vtx.restWords : Inkproof.Gpu.Vtx → List UInt32
+theorem Inkproof.Gpu.Vtx.restWords_eq : ∀ (v : Inkproof.Gpu.Vtx), v.restWords = [(Inkproof.Gpu.ratToFloat32 v.dir.x).toBits, (Inkproof.Gpu.ratToFloat32 v.dir.y).toBits, (Inkproof.Gpu.ratToFloat32 v.kx).toBits, (Inkproof.Gpu.ratToFloat32 v.ky).toBits]
 def Inkproof.Gpu.Vtx.words : Inkproof.Scene.Pt → Inkproof.Gpu.Vtx → List UInt32
 theorem Inkproof.Gpu.Vtx.words_eq : ∀ (origin : Inkproof.Scene.Pt) (v : Inkproof.Gpu.Vtx), Inkproof.Gpu.Vtx.words origin v = [(Inkproof.Gpu.ratToFloat32 (v.pos.x - origin.x)).toBits, (Inkproof.Gpu.ratToFloat32 (v.pos.y - origin.y)).toBits, (Inkproof.Gpu.ratToFloat32 v.dir.x).toBits, (Inkproof.Gpu.ratToFloat32 v.dir.y).toBits, (Inkproof.Gpu.ratToFloat32 v.kx).toBits, (Inkproof.Gpu.ratToFloat32 v.ky).toBits]
+theorem Inkproof.Gpu.Vtx.words_split : ∀ (origin : Inkproof.Scene.Pt) (v : Inkproof.Gpu.Vtx), Inkproof.Gpu.Vtx.words origin v = Inkproof.Gpu.Vtx.posWords origin v ++ v.restWords
 def Inkproof.Gpu.areaTriangles : Rat → Rat → Rat → Rat → Rat → List Inkproof.Scene.Tri
 theorem Inkproof.Gpu.areaTriangles_cross : ∀ {x0 x1 y0 ya yb : Rat}, (ya - y0) * (yb - y0) < 0 → Inkproof.Gpu.areaTriangles x0 x1 y0 ya yb = [{ a := { x := x0, y := y0 }, b := { x := x0, y := ya }, c := { x := x0 + (ya - y0) / (ya - yb) * (x1 - x0), y := y0 } }, { a := { x := x1, y := y0 }, b := { x := x1, y := yb }, c := { x := x0 + (ya - y0) / (ya - yb) * (x1 - x0), y := y0 } }]
 theorem Inkproof.Gpu.areaTriangles_of_not_cross : ∀ {x0 x1 y0 ya yb : Rat}, ¬(ya - y0) * (yb - y0) < 0 → Inkproof.Gpu.areaTriangles x0 x1 y0 ya yb = Inkproof.Gpu.spanTriangles x0 x1 y0 y0 ya yb
@@ -557,6 +562,8 @@ theorem Inkproof.Gpu.strokeVertices_circle : ∀ (c : Inkproof.Scene.Pt) (r : Ra
 theorem Inkproof.Gpu.strokeVertices_clipped : ∀ (b : Inkproof.Scene.Rect) (s : Inkproof.Scene.Shape), Inkproof.Gpu.strokeVertices (Inkproof.Scene.Shape.clipped b s) = Inkproof.Gpu.strokeVertices s
 theorem Inkproof.Gpu.strokeVertices_square : ∀ (c : Inkproof.Scene.Pt) (r : Rat), Inkproof.Gpu.strokeVertices (Inkproof.Scene.Shape.marker Inkproof.Scene.MarkerShape.square c r) = Inkproof.Gpu.squareVertices c
 theorem Inkproof.Gpu.strokeVertices_strip : ∀ (hw : Rat) (items : List (Inkproof.Scene.Item Inkproof.Scene.Pt)), Inkproof.Gpu.strokeVertices (Inkproof.Scene.Shape.strip hw items) = Inkproof.Gpu.stripVertices items
+def Inkproof.Gpu.strokeWordsFrom : Inkproof.Scene.Pt → Inkproof.Scene.Pt → List UInt32 → List Inkproof.Gpu.Vtx → List UInt32
+theorem Inkproof.Gpu.strokeWordsFrom_eq : ∀ (origin : Inkproof.Scene.Pt) (vs : List Inkproof.Gpu.Vtx) (last : Inkproof.Scene.Pt) (lw : List UInt32), lw = Inkproof.Gpu.vertexWords origin last → Inkproof.Gpu.strokeWordsFrom origin last lw vs = List.flatMap (Inkproof.Gpu.Vtx.words origin) vs
 def Inkproof.Gpu.tessellate : Inkproof.Scene.Pt → Inkproof.Scene.Command → List UInt32
 def Inkproof.Gpu.tessellateStroke : Inkproof.Scene.Pt → Inkproof.Scene.Command → List UInt32
 theorem Inkproof.Gpu.tessellateStroke_clipped : ∀ (origin : Inkproof.Scene.Pt) (c : Inkproof.Scene.Command) (r : Inkproof.Scene.Rect), Inkproof.Gpu.tessellateStroke origin { layer := c.layer, color := c.color, shape := Inkproof.Scene.Shape.clipped r c.shape } = Inkproof.Gpu.tessellateStroke origin c

@@ -24,14 +24,44 @@ theorem Vtx.words_eq (origin : Pt) (v : Vtx) :
        (ratToFloat32 v.dir.x).toBits, (ratToFloat32 v.dir.y).toBits,
        (ratToFloat32 v.kx).toBits, (ratToFloat32 v.ky).toBits] := rfl
 
+/-- A vertex's position words are the bits of its two coordinates relative to the origin, each rounded to Float32. -/
+theorem Vtx.posWords_eq (origin : Pt) (v : Vtx) :
+    v.posWords origin =
+      [(ratToFloat32 (v.pos.x - origin.x)).toBits, (ratToFloat32 (v.pos.y - origin.y)).toBits] := rfl
+
+/-- A vertex's remaining words are the bits of its direction and corner, each coordinate rounded to Float32. -/
+theorem Vtx.restWords_eq (v : Vtx) :
+    v.restWords =
+      [(ratToFloat32 v.dir.x).toBits, (ratToFloat32 v.dir.y).toBits,
+       (ratToFloat32 v.kx).toBits, (ratToFloat32 v.ky).toBits] := rfl
+
+theorem Vtx.words_split (origin : Pt) (v : Vtx) :
+    v.words origin = v.posWords origin ++ v.restWords := rfl
+
+theorem strokeWordsFrom_eq (origin : Pt) (vs : List Vtx) :
+    ∀ (last : Pt) (lw : List UInt32), lw = vertexWords origin last →
+      strokeWordsFrom origin last lw vs = vs.flatMap (Vtx.words origin) := by
+  induction vs with
+  | nil => intros; rfl
+  | cons v vs ih =>
+    intro last lw h
+    unfold strokeWordsFrom
+    split
+    · next hp => subst hp; subst h; simp [Vtx.words_split, ih v.pos (vertexWords origin v.pos) rfl]; rfl
+    · simp [Vtx.words_split, ih v.pos (Vtx.posWords origin v) rfl]
+
 /-- A command's stroke words are those of its stroke vertices, in order. -/
 theorem tessellateStroke_eq (origin : Pt) (c : Command) :
-    tessellateStroke origin c = (strokeVertices c.shape).flatMap (Vtx.words origin) := rfl
+    tessellateStroke origin c = (strokeVertices c.shape).flatMap (Vtx.words origin) := by
+  unfold tessellateStroke
+  split
+  · next h => rw [h]; rfl
+  · next v vs h => rw [← h]; exact strokeWordsFrom_eq origin _ _ _ rfl
 
 /-- A command's stroke words are six per vertex. -/
 theorem tessellateStroke_length (origin : Pt) (c : Command) :
     (tessellateStroke origin c).length = 6 * (strokeVertices c.shape).length := by
-  unfold tessellateStroke
+  rw [tessellateStroke_eq]
   generalize strokeVertices c.shape = vs
   induction vs with
   | nil => rfl

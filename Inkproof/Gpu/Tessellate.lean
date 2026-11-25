@@ -175,8 +175,27 @@ def strokeSize : Shape → Rat
 /-- The word of a shape's stroke size as a Float32, the operand of the size uniform. -/
 def strokeSizeWords (s : Shape) : List UInt32 := [(ratToFloat32 (strokeSize s)).toBits]
 
+/-- The words of `Vtx.words` after the position's two. -/
+def Vtx.restWords (v : Vtx) : List UInt32 :=
+  [(ratToFloat32 v.dir.x).toBits, (ratToFloat32 v.dir.y).toBits,
+   (ratToFloat32 v.kx).toBits, (ratToFloat32 v.ky).toBits]
+
+/-- The position words of a vertex, relative to `origin`. -/
+def Vtx.posWords (origin : Pt) (v : Vtx) : List UInt32 := vertexWords origin v.pos
+
+/-- The words of the vertices, reusing the position words `lw` of `last` for a vertex at the same position: the rational subtraction is the costly part, and a marker's vertices share their centre. -/
+def strokeWordsFrom (origin last : Pt) (lw : List UInt32) : List Vtx → List UInt32
+  | [] => []
+  | v :: vs =>
+    if v.pos = last then (lw ++ v.restWords) ++ strokeWordsFrom origin last lw vs
+    else
+      let w := v.posWords origin
+      (w ++ v.restWords) ++ strokeWordsFrom origin v.pos w vs
+
 /-- The vertex words of a command for a view-independent stroke: `tessellate`, except that the half width of a strip and the radius of a marker are left to the size uniform, so that they are in pixels whatever the transform. -/
 def tessellateStroke (origin : Pt) (c : Command) : List UInt32 :=
-  (strokeVertices c.shape).flatMap (Vtx.words origin)
+  match strokeVertices c.shape with
+  | [] => []
+  | v :: vs => strokeWordsFrom origin v.pos (v.posWords origin) (v :: vs)
 
 end Inkproof.Gpu
