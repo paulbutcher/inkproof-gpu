@@ -195,6 +195,30 @@ def strokeWordsFrom (origin last : Pt) (lw : List UInt32) : List Vtx → List UI
       let w := v.posWords origin
       (w ++ v.restWords) ++ strokeWordsFrom origin v.pos w vs
 
+private def strokeWordsStep (origin : Pt) (a : Pt × List UInt32 × Array UInt32) (v : Vtx) : Pt × List UInt32 × Array UInt32 :=
+  if v.pos = a.1 then (a.1, a.2.1, a.2.2 ++ (a.2.1 ++ v.restWords).toArray)
+  else
+    let w := v.posWords origin
+    (v.pos, w, a.2.2 ++ (w ++ v.restWords).toArray)
+
+private def strokeWordsFromTR (origin last : Pt) (lw : List UInt32) (vs : List Vtx) : List UInt32 :=
+  (vs.foldl (strokeWordsStep origin) (last, lw, #[])).2.2.toList
+
+private theorem strokeWordsFromTR_go (origin : Pt) (vs : List Vtx) :
+    ∀ (last : Pt) (lw : List UInt32) (acc : Array UInt32),
+      (vs.foldl (strokeWordsStep origin) (last, lw, acc)).2.2.toList = acc.toList ++ strokeWordsFrom origin last lw vs := by
+  induction vs with
+  | nil => intros; simp [strokeWordsFrom]
+  | cons v vs ih =>
+    intro last lw acc
+    simp only [List.foldl_cons, strokeWordsStep, strokeWordsFrom]
+    split <;> simp [ih]
+
+/-- Constant stack, which the browser needs for strips of many vertices. -/
+@[csimp] private theorem strokeWordsFrom_eq_strokeWordsFromTR : @strokeWordsFrom = @strokeWordsFromTR := by
+  funext origin last lw vs
+  simp [strokeWordsFromTR, strokeWordsFromTR_go]
+
 /-- The words of each vertex of the fan of `discFan m` after its position's two. They do not depend on the centre, and the corners are large rationals, so they are worked out once per `m`. -/
 def discRests (m : Nat) : List (List UInt32) := (discFan m ⟨0, 0⟩).map Vtx.restWords
 

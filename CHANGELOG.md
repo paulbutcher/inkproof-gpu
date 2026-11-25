@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.24.1]
+
+- `tessellateStroke` of a strip of thousands of values no longer overflows the stack in the browser.
+
 ## [0.24.0]
 
 - `tessellateStroke` computes a circle marker's corner words once per fan size, not once per marker.

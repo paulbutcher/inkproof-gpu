@@ -414,5 +414,10 @@ def main (args : List String) : IO UInt32 :=
       let (_, a) := strokeLayersBytes {} true 1920 600 layers layers white
       let (_, b) := viewLayersBytes (Inkproof.Gpu.tessellateStroke ⟨0, 0⟩) {} true 1920 600 v strokePlot layers layers #[] white
       check (a.size > 20000000 && b.size > 20000000) s!"{a.size} {b.size}"⟩,
+    ⟨"a stroke of one strip of thousands of values is tessellated",
+      let items := (List.range 2000).map fun i => Inkproof.Scene.Item.val ⟨Int.ofNat i, Int.ofNat (i % 7)⟩
+      let c : Inkproof.Scene.Command := ⟨0, .flat ⟨0, 0, 0, 255⟩, .strip 1 items⟩
+      let ws := Inkproof.Gpu.tessellateStroke ⟨0, 0⟩ c
+      check (ws.length > 100000) s!"{ws.length}"⟩,
     ⟨"unknown opcode is rejected", check (decode (encode [⟨200, []⟩]) == none) "accepted"⟩
   ]
