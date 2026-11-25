@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.24.0]
+
+- `tessellateStroke` computes a circle marker's corner words once per fan size, not once per marker.
+
 ## [0.23.0]
 
 - `tessellateStroke` converts a marker's centre once for its vertices, not once per vertex (`Vtx.posWords`, `Vtx.restWords`, `strokeWordsFrom`).
