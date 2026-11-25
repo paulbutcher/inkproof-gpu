@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.23.0]
+
+- `tessellateStroke` converts a marker's centre once for its vertices, not once per vertex (`Vtx.posWords`, `Vtx.restWords`, `strokeWordsFrom`).
+
 ## [0.22.1]
 
 - `strokeLayersBytes` and `viewLayersBytes` no longer overflow the stack under Lasm on layers of tens of thousands of commands (`tileDraws` ran `List.zip`).
