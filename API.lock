@@ -383,11 +383,23 @@ theorem Inkproof.Gpu.deltaSum_nil : ∀ (f : Inkproof.Scene.Color → UInt8) (t 
 def Inkproof.Gpu.deltaWords : Inkproof.Scene.Color → Inkproof.Scene.Color → List UInt32
 theorem Inkproof.Gpu.deltaWords_eq : ∀ (a b : Inkproof.Scene.Color), Inkproof.Gpu.deltaWords a b = List.map (fun x => match x with | (x, y) => (Inkproof.Gpu.ratToFloat32 (↑(↑y.toNat - ↑x.toNat) / 255)).toBits) [(a.r, b.r), (a.g, b.g), (a.b, b.b), (a.a, b.a)]
 theorem Inkproof.Gpu.deltaWords_length : ∀ (a b : Inkproof.Scene.Color), (Inkproof.Gpu.deltaWords a b).length = 4
+def Inkproof.Gpu.discFan : Nat → Inkproof.Scene.Pt → List Inkproof.Gpu.Vtx
+theorem Inkproof.Gpu.discFan_centre : ∀ (m : Nat) (c : Inkproof.Scene.Pt), Inkproof.Gpu.discFan m c = List.map (fun v => { pos := c, dir := v.dir, kx := v.kx, ky := v.ky }) (Inkproof.Gpu.discFan m { x := 0, y := 0 })
+theorem Inkproof.Gpu.discFan_eq : ∀ (m : Nat) (c : Inkproof.Scene.Pt), Inkproof.Gpu.discFan m c = List.flatMap (fun x => match x with | (a, b) => [{ pos := c, dir := { x := 1, y := 0 }, kx := 0, ky := 0 }, { pos := c, dir := { x := 1, y := 0 }, kx := a.fst, ky := a.snd }, { pos := c, dir := { x := 1, y := 0 }, kx := b.fst, ky := b.snd }]) ((Inkproof.Gpu.discRing m).zip (List.drop 1 (Inkproof.Gpu.discRing m) ++ List.take 1 (Inkproof.Gpu.discRing m)))
 def Inkproof.Gpu.discQuarter : Rat → Nat
 theorem Inkproof.Gpu.discQuarter_eq : ∀ (r : Rat), Inkproof.Gpu.discQuarter r = (List.find? (fun m => Decidable.decide (r * 5 / 4 ≤ ↑m * ↑m)) (List.range' 2 63)).getD 64
+def Inkproof.Gpu.discRests : Nat → List (List UInt32)
+def Inkproof.Gpu.discRestsCached : Nat → List (List UInt32)
+theorem Inkproof.Gpu.discRestsCached_eq : ∀ (m : Nat), Inkproof.Gpu.discRestsCached m = Inkproof.Gpu.discRests m
+def Inkproof.Gpu.discRestsTable : Array (List (List UInt32))
+theorem Inkproof.Gpu.discRestsTable_get : ∀ (m : Nat), m < 65 → Inkproof.Gpu.discRestsTable[m]? = Option.some (Inkproof.Gpu.discRests m)
+theorem Inkproof.Gpu.discRestsTable_size : Inkproof.Gpu.discRestsTable.size = 65
+theorem Inkproof.Gpu.discRests_eq : ∀ (m : Nat), Inkproof.Gpu.discRests m = List.map Inkproof.Gpu.Vtx.restWords (Inkproof.Gpu.discFan m { x := 0, y := 0 })
 def Inkproof.Gpu.discRing : Nat → List (Rat × Rat)
 theorem Inkproof.Gpu.discRing_eq : ∀ (m : Nat), Inkproof.Gpu.discRing m = List.map (fun x => match x with | (a, b) => ((a.fst + b.fst) / (1 + a.fst * b.fst + a.snd * b.snd), (a.snd + b.snd) / (1 + a.fst * b.fst + a.snd * b.snd))) ((Inkproof.Gpu.discTangents m).zip (List.drop 1 (Inkproof.Gpu.discTangents m) ++ List.take 1 (Inkproof.Gpu.discTangents m)))
 theorem Inkproof.Gpu.discRing_length : ∀ (m : Nat), (Inkproof.Gpu.discRing m).length = 4 * m
+def Inkproof.Gpu.discStrokeWords : Inkproof.Scene.Pt → Inkproof.Scene.Pt → Nat → List UInt32
+theorem Inkproof.Gpu.discStrokeWords_eq : ∀ (origin c : Inkproof.Scene.Pt) (m : Nat), Inkproof.Gpu.discStrokeWords origin c m = List.flatMap (Inkproof.Gpu.Vtx.words origin) (Inkproof.Gpu.discFan m c)
 def Inkproof.Gpu.discTangents : Nat → List (Rat × Rat)
 theorem Inkproof.Gpu.discTangents_eq : ∀ (m : Nat), Inkproof.Gpu.discTangents m = have q := List.map (fun j => have x := 355 / 113 * ↑j / (4 * ↑m); have t := x * (15 - x ^ 2) / (15 - 6 * x ^ 2); ((1 - t ^ 2) / (1 + t ^ 2), 2 * t / (1 + t ^ 2))) (List.range m); q ++ List.map (fun p => (-p.snd, p.fst)) q ++ List.map (fun p => (-p.fst, -p.snd)) q ++ List.map (fun p => (p.snd, -p.fst)) q
 theorem Inkproof.Gpu.discTangents_length : ∀ (m : Nat), (Inkproof.Gpu.discTangents m).length = 4 * m
@@ -562,6 +574,7 @@ theorem Inkproof.Gpu.strokeVertices_circle : ∀ (c : Inkproof.Scene.Pt) (r : Ra
 theorem Inkproof.Gpu.strokeVertices_clipped : ∀ (b : Inkproof.Scene.Rect) (s : Inkproof.Scene.Shape), Inkproof.Gpu.strokeVertices (Inkproof.Scene.Shape.clipped b s) = Inkproof.Gpu.strokeVertices s
 theorem Inkproof.Gpu.strokeVertices_square : ∀ (c : Inkproof.Scene.Pt) (r : Rat), Inkproof.Gpu.strokeVertices (Inkproof.Scene.Shape.marker Inkproof.Scene.MarkerShape.square c r) = Inkproof.Gpu.squareVertices c
 theorem Inkproof.Gpu.strokeVertices_strip : ∀ (hw : Rat) (items : List (Inkproof.Scene.Item Inkproof.Scene.Pt)), Inkproof.Gpu.strokeVertices (Inkproof.Scene.Shape.strip hw items) = Inkproof.Gpu.stripVertices items
+theorem Inkproof.Gpu.strokeVertices_unclip : ∀ (s : Inkproof.Scene.Shape), Inkproof.Gpu.strokeVertices (Inkproof.Gpu.unclipShape s) = Inkproof.Gpu.strokeVertices s
 def Inkproof.Gpu.strokeWordsFrom : Inkproof.Scene.Pt → Inkproof.Scene.Pt → List UInt32 → List Inkproof.Gpu.Vtx → List UInt32
 theorem Inkproof.Gpu.strokeWordsFrom_eq : ∀ (origin : Inkproof.Scene.Pt) (vs : List Inkproof.Gpu.Vtx) (last : Inkproof.Scene.Pt) (lw : List UInt32), lw = Inkproof.Gpu.vertexWords origin last → Inkproof.Gpu.strokeWordsFrom origin last lw vs = List.flatMap (Inkproof.Gpu.Vtx.words origin) vs
 def Inkproof.Gpu.tessellate : Inkproof.Scene.Pt → Inkproof.Scene.Command → List UInt32
@@ -578,6 +591,9 @@ def Inkproof.Gpu.triWords : Inkproof.Scene.Pt → Inkproof.Scene.Tri → List UI
 theorem Inkproof.Gpu.triWords_eq : ∀ (origin : Inkproof.Scene.Pt) (t : Inkproof.Scene.Tri), Inkproof.Gpu.triWords origin t = Inkproof.Gpu.vertexWords origin t.a ++ Inkproof.Gpu.vertexWords origin t.b ++ Inkproof.Gpu.vertexWords origin t.c
 theorem Inkproof.Gpu.triWords_length : ∀ (origin : Inkproof.Scene.Pt) (t : Inkproof.Scene.Tri), (Inkproof.Gpu.triWords origin t).length = 6
 def Inkproof.Gpu.triangles : Inkproof.Scene.Shape → List Inkproof.Scene.Tri
+def Inkproof.Gpu.unclipShape : Inkproof.Scene.Shape → Inkproof.Scene.Shape
+theorem Inkproof.Gpu.unclipShape_clipped : ∀ (c : Inkproof.Scene.Rect) (s : Inkproof.Scene.Shape), Inkproof.Gpu.unclipShape (Inkproof.Scene.Shape.clipped c s) = Inkproof.Gpu.unclipShape s
+theorem Inkproof.Gpu.unclipShape_of_not_clipped : ∀ (s : Inkproof.Scene.Shape), (∀ (c : Inkproof.Scene.Rect) (s' : Inkproof.Scene.Shape), s ≠ Inkproof.Scene.Shape.clipped c s') → Inkproof.Gpu.unclipShape s = s
 def Inkproof.Gpu.uniformNames : List String
 theorem Inkproof.Gpu.uniformNames_eq : Inkproof.Gpu.uniformNames = ["u_slope", "u_offset", "u_size", "u_view", "u_colour", "u_axis", "u_start", "u_inv", "u_delta0", "u_delta1", "u_delta2", "u_delta3"]
 def Inkproof.Gpu.uploads : Nat → List (List UInt32) → List Inkproof.Gpu.Op

@@ -91,7 +91,7 @@ theorem tessellate_clipped (origin : Scene.Pt) (c : Scene.Command) (r : Scene.Re
 /-- A clipped shape has the stroke vertices of what it clips. -/
 theorem tessellateStroke_clipped (origin : Scene.Pt) (c : Scene.Command) (r : Scene.Rect) :
     tessellateStroke origin { c with shape := .clipped r c.shape } = tessellateStroke origin c := by
-  simp [tessellateStroke, strokeVertices]
+  simp [tessellateStroke, unclipShape]
 
 theorem viewTile_view (w h : Nat) (v : View) (plot : Scene.Rect) (l : Scene.DisplayList) :
     (viewTile w h v plot l).view = viewWords w h := rfl

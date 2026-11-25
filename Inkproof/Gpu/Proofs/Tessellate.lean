@@ -50,13 +50,61 @@ theorem strokeWordsFrom_eq (origin : Pt) (vs : List Vtx) :
     · next hp => subst hp; subst h; simp [Vtx.words_split, ih v.pos (vertexWords origin v.pos) rfl]; rfl
     · simp [Vtx.words_split, ih v.pos (Vtx.posWords origin v) rfl]
 
+/-- The fan's triangles: the centre and two adjacent corners of the ring, in turn. -/
+theorem discFan_eq (m : Nat) (c : Pt) :
+    discFan m c = ((discRing m).zip ((discRing m).drop 1 ++ (discRing m).take 1)).flatMap fun (a, b) =>
+      [⟨c, ⟨1, 0⟩, 0, 0⟩, ⟨c, ⟨1, 0⟩, a.1, a.2⟩, ⟨c, ⟨1, 0⟩, b.1, b.2⟩] := rfl
+
+theorem discRests_eq (m : Nat) : discRests m = (discFan m ⟨0, 0⟩).map Vtx.restWords := rfl
+
+theorem discRestsTable_size : discRestsTable.size = 65 := by
+  simp [discRestsTable]
+
+theorem discRestsTable_get (m : Nat) (h : m < 65) : discRestsTable[m]? = some (discRests m) := by
+  simp [discRestsTable, h]
+
+theorem unclipShape_clipped (c : Rect) (s : Shape) : unclipShape (.clipped c s) = unclipShape s := rfl
+
+theorem unclipShape_of_not_clipped (s : Shape) (h : ∀ c s', s ≠ .clipped c s') : unclipShape s = s := by
+  cases s with
+  | clipped c s' => exact absurd rfl (h c s')
+  | _ => rfl
+
+theorem discRestsCached_eq (m : Nat) : discRestsCached m = discRests m := by
+  unfold discRestsCached discRestsTable
+  by_cases h : m < 65 <;> simp [h]
+
+/-- A fan's vertices differ with its centre only in their positions. -/
+theorem discFan_centre (m : Nat) (c : Pt) :
+    discFan m c = (discFan m ⟨0, 0⟩).map fun v => { v with pos := c } := by
+  unfold discFan
+  simp only [List.map_flatMap]
+  rfl
+
+/-- A fan's words are the position words of its centre before the remaining words of each vertex. -/
+theorem discStrokeWords_eq (origin c : Pt) (m : Nat) :
+    discStrokeWords origin c m = (discFan m c).flatMap (Vtx.words origin) := by
+  unfold discStrokeWords
+  rw [discRestsCached_eq, discRests, discFan_centre m c, List.flatMap_map, List.flatMap_map]
+  rfl
+
+theorem strokeVertices_unclip (s : Shape) : strokeVertices (unclipShape s) = strokeVertices s := by
+  induction s with
+  | clipped _ s ih => simpa [unclipShape, strokeVertices] using ih
+  | _ => rfl
+
 /-- A command's stroke words are those of its stroke vertices, in order. -/
 theorem tessellateStroke_eq (origin : Pt) (c : Command) :
     tessellateStroke origin c = (strokeVertices c.shape).flatMap (Vtx.words origin) := by
   unfold tessellateStroke
+  rw [← strokeVertices_unclip c.shape]
+  generalize unclipShape c.shape = s
   split
-  · next h => rw [h]; rfl
-  · next v vs h => rw [← h]; exact strokeWordsFrom_eq origin _ _ _ rfl
+  · next p r => exact discStrokeWords_eq origin p _
+  · next h =>
+    split
+    · next h' => rw [h']; rfl
+    · next v vs h' => rw [← h']; exact strokeWordsFrom_eq origin _ _ _ rfl
 
 /-- A command's stroke words are six per vertex. -/
 theorem tessellateStroke_length (origin : Pt) (c : Command) :
@@ -191,7 +239,7 @@ theorem discVertices_length (r : Rat) (c : Pt) : (discVertices r c).length = 12 
     intro l; induction l with
     | nil => rfl
     | cons x l ih => simp only [List.flatMap_cons, List.length_append, ih, List.length_cons, List.length_nil]; omega
-  unfold discVertices
+  unfold discVertices discFan
   simp only []
   rw [key, ring_pairs_length, discRing_length]; omega
 

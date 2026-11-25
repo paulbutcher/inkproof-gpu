@@ -125,11 +125,14 @@ def octagonVertices (c d : Pt) : List Vtx :=
   (ring.zip (ring.drop 1)).flatMap fun (a, b) =>
     [⟨c, d, 0, 0⟩, ⟨c, d, a.1, a.2⟩, ⟨c, d, b.1, b.2⟩]
 
-/-- The vertices of the polygon of `discTriangles` about `c` for a circle of radius `r`, with corners in units of the radius, as a fan from the centre. -/
-def discVertices (r : Rat) (c : Pt) : List Vtx :=
-  let ring := discRing (discQuarter r)
+/-- The vertices of the polygon of `discTriangles` about `c` with `m` tangent points in each quarter, with corners in units of the radius, as a fan from the centre. -/
+def discFan (m : Nat) (c : Pt) : List Vtx :=
+  let ring := discRing m
   (ring.zip (ring.drop 1 ++ ring.take 1)).flatMap fun (a, b) =>
     [⟨c, ⟨1, 0⟩, 0, 0⟩, ⟨c, ⟨1, 0⟩, a.1, a.2⟩, ⟨c, ⟨1, 0⟩, b.1, b.2⟩]
+
+/-- The vertices of the polygon of `discTriangles` about `c` for a circle of radius `r`. -/
+def discVertices (r : Rat) (c : Pt) : List Vtx := discFan (discQuarter r) c
 
 /-- The half of the octagon about `c` that lies ahead of `c` along `d`, as a fan from the centre. Its straight edge is across `d` through `c`, with the corners that the rectangle about a segment has at its end, so a cap and a segment that meet there share an edge and cover nothing twice. -/
 def capVertices (c d : Pt) : List Vtx :=
@@ -192,10 +195,32 @@ def strokeWordsFrom (origin last : Pt) (lw : List UInt32) : List Vtx → List UI
       let w := v.posWords origin
       (w ++ v.restWords) ++ strokeWordsFrom origin v.pos w vs
 
+/-- The words of each vertex of the fan of `discFan m` after its position's two. They do not depend on the centre, and the corners are large rationals, so they are worked out once per `m`. -/
+def discRests (m : Nat) : List (List UInt32) := (discFan m ⟨0, 0⟩).map Vtx.restWords
+
+/-- The tables of `discRests` for every `m` that `discQuarter` can give. -/
+def discRestsTable : Array (List (List UInt32)) := (Array.range 65).map discRests
+
+/-- `discRests m` from a table made once, for the `m` that `discQuarter` gives. -/
+def discRestsCached (m : Nat) : List (List UInt32) := discRestsTable[m]?.getD (discRests m)
+
+/-- The words of the fan about `c` with `m` tangent points in each quarter: the position words of `c` before the words of each vertex. -/
+def discStrokeWords (origin c : Pt) (m : Nat) : List UInt32 :=
+  let w := vertexWords origin c
+  (discRestsCached m).flatMap (w ++ ·)
+
+/-- The shape that a clipped shape clips, through any number of clips. -/
+def unclipShape : Shape → Shape
+  | .clipped _ s => unclipShape s
+  | s => s
+
 /-- The vertex words of a command for a view-independent stroke: `tessellate`, except that the half width of a strip and the radius of a marker are left to the size uniform, so that they are in pixels whatever the transform. -/
 def tessellateStroke (origin : Pt) (c : Command) : List UInt32 :=
-  match strokeVertices c.shape with
-  | [] => []
-  | v :: vs => strokeWordsFrom origin v.pos (v.posWords origin) (v :: vs)
+  match unclipShape c.shape with
+  | .marker .circle p r => discStrokeWords origin p (discQuarter r)
+  | s =>
+    match strokeVertices s with
+    | [] => []
+    | v :: vs => strokeWordsFrom origin v.pos (v.posWords origin) (v :: vs)
 
 end Inkproof.Gpu
