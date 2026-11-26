@@ -222,4 +222,116 @@ theorem viewLayers_draws (tess : Scene.Command → List UInt32) (w h : Nat) (v :
   rw [this, ← hc]
   rfl
 
+theorem Layer.strokeCut_eq (list : Scene.DisplayList) :
+    Layer.strokeCut list = Layer.cut (tessellateStroke ⟨0, 0⟩) list := rfl
+
+theorem layerRunsStep_nil (c : Scene.Command) : layerRunsStep c [] = [[c]] := rfl
+
+theorem layerRunsStep_cons (c : Scene.Command) (g : List Scene.Command) (gs : List (List Scene.Command)) :
+    layerRunsStep c (g :: gs) =
+      if g.head?.map (·.layer) == some c.layer then (c :: g) :: gs else [c] :: g :: gs := rfl
+
+/-- The runs of `cs` hold its commands in order, each of one layer number. -/
+theorem layerRuns_spec (cs : List Scene.Command) : (layerRuns cs).flatten = cs ∧
+    ∀ g ∈ layerRuns cs, ∀ x ∈ g, ∀ y ∈ g, x.layer = y.layer := by
+  induction cs with
+  | nil => simp [layerRuns]
+  | cons c cs ih =>
+    obtain ⟨ih1, ih2⟩ := ih
+    have hr : layerRuns (c :: cs) = layerRunsStep c (layerRuns cs) := rfl
+    rw [hr]
+    generalize layerRuns cs = L at ih1 ih2
+    match L, ih1, ih2 with
+    | [], ih1, _ => simp [layerRunsStep, ← ih1]
+    | g :: gs, ih1, ih2 =>
+      by_cases hc : (g.head?.map (·.layer)) == some c.layer
+      · obtain ⟨a, g', rfl⟩ : ∃ a g', g = a :: g' := by
+          cases g with
+          | nil => simp at hc
+          | cons a g' => exact ⟨a, g', rfl⟩
+        have ha : a.layer = c.layer := by simpa using hc
+        simp only [layerRunsStep, hc, ite_true]
+        refine ⟨by simpa using ih1, fun g'' hg'' x hx y hy => ?_⟩
+        have hsame := ih2 (a :: g') List.mem_cons_self
+        rcases List.mem_cons.mp hg'' with rfl | hg''
+        · have hl : ∀ z ∈ c :: a :: g', z.layer = c.layer := fun z hz => by
+            rcases List.mem_cons.mp hz with rfl | hz
+            · rfl
+            · rw [← ha]; exact hsame z hz a List.mem_cons_self
+          rw [hl x hx, hl y hy]
+        · exact ih2 g'' (List.mem_cons_of_mem _ hg'') x hx y hy
+      · simp only [layerRunsStep, hc]
+        simp only [Bool.false_eq_true, ite_false]
+        refine ⟨by simpa using ih1, fun g'' hg'' x hx y hy => ?_⟩
+        rcases List.mem_cons.mp hg'' with rfl | hg''
+        · simp at hx hy; rw [hx, hy]
+        · exact ih2 g'' hg'' x hx y hy
+
+/-- The lists of the pieces of a cut are its runs of equal layer in paint order. -/
+theorem Layer.cut_lists (tess : Scene.Command → List UInt32) (list : Scene.DisplayList) :
+    (Layer.cut tess list).map (·.list) = (layerRuns list.paintOrder).map List.toArray := by
+  simp [Layer.cut, Layer.build, List.map_map, Function.comp_def]
+
+/-- Each piece of a cut holds the commands of one layer number, and its words are `tess`'s. -/
+theorem Layer.cut_sound (tess : Scene.Command → List UInt32) (list : Scene.DisplayList) :
+    ∀ l ∈ Layer.cut tess list, l.Sound tess ∧ ∀ x ∈ l.list, ∀ y ∈ l.list, x.layer = y.layer := by
+  intro l hl
+  obtain ⟨g, hg, rfl⟩ := List.mem_map.mp hl
+  exact ⟨rfl, fun x hx y hy => (layerRuns_spec _).2 g hg x (Array.mem_def.mp hx) y (Array.mem_def.mp hy)⟩
+
+/-- The pieces of a cut are stacked, lowest layer first. -/
+theorem Layer.cut_stacked (tess : Scene.Command → List UInt32) (list : Scene.DisplayList) :
+    DisplayList.Stacked ((Layer.cut tess list).map (·.list)) := by
+  rw [Layer.cut_lists]
+  have h := list.paintOrder_sorted
+  rw [← (layerRuns_spec list.paintOrder).1, List.pairwise_flatten] at h
+  simp only [DisplayList.Stacked, List.pairwise_map]
+  exact h.2.imp fun {a b} hab x hx y hy => hab x (Array.mem_def.mp hx) y (Array.mem_def.mp hy)
+
+/-- The concatenation of the pieces of a cut paints in the order `list` does. -/
+theorem Layer.cut_paintOrder (tess : Scene.Command → List UInt32) (list : Scene.DisplayList) :
+    (DisplayList.concat ((Layer.cut tess list).map (·.list))).paintOrder = list.paintOrder := by
+  rw [paintOrder_concat _ (Layer.cut_stacked tess list), Layer.cut_lists]
+  have hp : ∀ g ∈ layerRuns list.paintOrder, Scene.DisplayList.paintOrder g.toArray = g := by
+    intro g hg
+    refine List.mergeSort_of_pairwise ?_
+    refine List.pairwise_of_forall_mem_list fun x hx y hy => ?_
+    simpa using Nat.le_of_eq ((layerRuns_spec _).2 g hg x hx y hy)
+  rw [List.flatMap_map]
+  have hm : (layerRuns list.paintOrder).map (fun g => Scene.DisplayList.paintOrder g.toArray) =
+      layerRuns list.paintOrder := (List.map_congr_left hp).trans (List.map_id _)
+  rw [List.flatMap, hm]
+  exact (layerRuns_spec list.paintOrder).1
+
+/-- Drawing the pieces of a cut in pixels, in order, draws what one `pixelStrokeTile` of `list` draws, which is what `strokeFrame` draws for it. -/
+theorem Layer.cut_draws (tess : Scene.Command → List UInt32) (w h : Nat) (list : Scene.DisplayList) :
+    frameDraws tess ((Layer.cut tess list).map (Layer.pixelTile w h)) =
+      frameDraws tess [pixelStrokeTile w h list] := by
+  rw [strokeLayers_draws tess w h _ (Layer.cut_stacked tess list)]
+  have hst : ∀ L c, (pixelStrokeTile w h L).stateOf c = (pixelStrokeTile w h list).stateOf c :=
+    fun _ _ => rfl
+  simp only [frameDraws, List.flatMap_cons, List.flatMap_nil, List.append_nil, hst]
+  change List.map _ (DisplayList.concat _).paintOrder = List.map _ list.paintOrder
+  rw [Layer.cut_paintOrder]
+
+/-- Clipping to a view keeps the paint order. -/
+theorem View.clip_paintOrder (v : View) (list : Scene.DisplayList) :
+    (v.clip list).paintOrder = list.paintOrder.map fun c => { c with shape := .clipped ⟨v.x0, v.y0, v.x1, v.y1⟩ c.shape } := by
+  simp only [Scene.DisplayList.paintOrder, View.clip, Array.toList_map]
+  symm
+  exact List.map_mergeSort (f := fun c : Scene.Command => { c with shape := .clipped ⟨v.x0, v.y0, v.x1, v.y1⟩ c.shape })
+    (s := fun a b => decide (a.layer ≤ b.layer)) fun a _ b _ => rfl
+
+/-- Drawing the pieces of a cut under a view, in order, draws what one `viewTile` of `list` draws, which is what `viewFrame` draws for it. -/
+theorem Layer.cut_viewDraws (tess : Scene.Command → List UInt32) (w h : Nat) (v : View)
+    (plot : Scene.Rect) (list : Scene.DisplayList) :
+    frameDraws tess ((Layer.cut tess list).map (Layer.viewTile w h v plot)) =
+      frameDraws tess [Inkproof.Gpu.viewTile w h v plot list] := by
+  rw [viewLayers_draws tess w h v plot _ (Layer.cut_stacked tess list)]
+  have hst : ∀ L c, (Inkproof.Gpu.viewTile w h v plot L).stateOf c = (Inkproof.Gpu.viewTile w h v plot list).stateOf c :=
+    fun _ _ => rfl
+  simp only [frameDraws, List.flatMap_cons, List.flatMap_nil, List.append_nil, hst]
+  change List.map _ (v.clip _).paintOrder = List.map _ (v.clip list).paintOrder
+  rw [View.clip_paintOrder, View.clip_paintOrder, Layer.cut_paintOrder]
+
 end Inkproof.Gpu

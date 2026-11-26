@@ -146,6 +146,23 @@ def Layer.build (tess : Scene.Command → List UInt32) (list : Scene.DisplayList
 def Layer.stroke (list : Scene.DisplayList) : Layer :=
   Layer.build (tessellateStroke ⟨0, 0⟩) list
 
+/-- `c` put in front of the run of `runs` it continues, if the run is of its `layer`, or in a run of its own. -/
+def layerRunsStep (c : Scene.Command) : List (List Scene.Command) → List (List Scene.Command)
+  | g :: gs => if g.head?.map (·.layer) == some c.layer then (c :: g) :: gs else [c] :: g :: gs
+  | [] => [[c]]
+
+/-- The commands of `cs`, in order, cut into the runs of equal `layer`. -/
+def layerRuns (cs : List Scene.Command) : List (List Scene.Command) :=
+  cs.foldr layerRunsStep []
+
+/-- `list` cut into one layer per `Command.layer` number, lowest first, each tessellated by `tess` once. Drawn in order, the pieces paint what `list` paints. -/
+def Layer.cut (tess : Scene.Command → List UInt32) (list : Scene.DisplayList) : List Layer :=
+  (layerRuns list.paintOrder).map fun g => Layer.build tess g.toArray
+
+/-- `list` cut into layers by `Command.layer` number, tessellated by `tessellateStroke`, as `Layer.stroke` does for a whole list. -/
+def Layer.strokeCut (list : Scene.DisplayList) : List Layer :=
+  Layer.cut (tessellateStroke ⟨0, 0⟩) list
+
 /-- The tile of a layer in device pixels, as `pixelStrokeTile` but with the layer's words. -/
 def Layer.pixelTile (w h : Nat) (l : Layer) : Tile :=
   { Inkproof.Gpu.pixelStrokeTile w h l.list with words := some l.words }

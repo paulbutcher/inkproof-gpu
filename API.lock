@@ -83,6 +83,13 @@ def Inkproof.Gpu.Layer.Sound : (Inkproof.Scene.Command → List UInt32) → Inkp
 def Inkproof.Gpu.Layer.build : (Inkproof.Scene.Command → List UInt32) → Inkproof.Scene.DisplayList → Inkproof.Gpu.Layer
 theorem Inkproof.Gpu.Layer.build_sound : ∀ (tess : Inkproof.Scene.Command → List UInt32) (list : Inkproof.Scene.DisplayList), Inkproof.Gpu.Layer.Sound tess (Inkproof.Gpu.Layer.build tess list)
 theorem Inkproof.Gpu.Layer.build_words : ∀ (tess : Inkproof.Scene.Command → List UInt32) (list : Inkproof.Scene.DisplayList), (Inkproof.Gpu.Layer.build tess list).words = List.map tess list.paintOrder
+def Inkproof.Gpu.Layer.cut : (Inkproof.Scene.Command → List UInt32) → Inkproof.Scene.DisplayList → List Inkproof.Gpu.Layer
+theorem Inkproof.Gpu.Layer.cut_draws : ∀ (tess : Inkproof.Scene.Command → List UInt32) (w h : Nat) (list : Inkproof.Scene.DisplayList), Inkproof.Gpu.frameDraws tess (List.map (Inkproof.Gpu.Layer.pixelTile w h) (Inkproof.Gpu.Layer.cut tess list)) = Inkproof.Gpu.frameDraws tess [Inkproof.Gpu.pixelStrokeTile w h list]
+theorem Inkproof.Gpu.Layer.cut_lists : ∀ (tess : Inkproof.Scene.Command → List UInt32) (list : Inkproof.Scene.DisplayList), List.map (fun x => x.list) (Inkproof.Gpu.Layer.cut tess list) = List.map List.toArray (Inkproof.Gpu.layerRuns list.paintOrder)
+theorem Inkproof.Gpu.Layer.cut_paintOrder : ∀ (tess : Inkproof.Scene.Command → List UInt32) (list : Inkproof.Scene.DisplayList), (Inkproof.Gpu.DisplayList.concat (List.map (fun x => x.list) (Inkproof.Gpu.Layer.cut tess list))).paintOrder = list.paintOrder
+theorem Inkproof.Gpu.Layer.cut_sound : ∀ (tess : Inkproof.Scene.Command → List UInt32) (list : Inkproof.Scene.DisplayList) (l : Inkproof.Gpu.Layer), l ∈ Inkproof.Gpu.Layer.cut tess list → Inkproof.Gpu.Layer.Sound tess l ∧ ∀ (x : Inkproof.Scene.Command), x ∈ l.list → ∀ (y : Inkproof.Scene.Command), y ∈ l.list → x.layer = y.layer
+theorem Inkproof.Gpu.Layer.cut_stacked : ∀ (tess : Inkproof.Scene.Command → List UInt32) (list : Inkproof.Scene.DisplayList), Inkproof.Gpu.DisplayList.Stacked (List.map (fun x => x.list) (Inkproof.Gpu.Layer.cut tess list))
+theorem Inkproof.Gpu.Layer.cut_viewDraws : ∀ (tess : Inkproof.Scene.Command → List UInt32) (w h : Nat) (v : Inkproof.Gpu.View) (plot : Inkproof.Scene.Rect) (list : Inkproof.Scene.DisplayList), Inkproof.Gpu.frameDraws tess (List.map (Inkproof.Gpu.Layer.viewTile w h v plot) (Inkproof.Gpu.Layer.cut tess list)) = Inkproof.Gpu.frameDraws tess [Inkproof.Gpu.viewTile w h v plot list]
 field Inkproof.Gpu.Layer.list : Inkproof.Gpu.Layer → Inkproof.Scene.DisplayList
 constructor Inkproof.Gpu.Layer.mk : Inkproof.Scene.DisplayList → List (List UInt32) → Inkproof.Gpu.Layer
 def Inkproof.Gpu.Layer.pixelTile : Nat → Nat → Inkproof.Gpu.Layer → Inkproof.Gpu.Tile
@@ -92,6 +99,8 @@ def Inkproof.Gpu.Layer.same : Inkproof.Gpu.Layer → Inkproof.Gpu.Layer → Bool
 theorem Inkproof.Gpu.Layer.same_eq : ∀ (a b : Inkproof.Gpu.Layer), a.same b = Bool.true → a = b
 theorem Inkproof.Gpu.Layer.same_self : ∀ (l : Inkproof.Gpu.Layer), l.same l = Bool.true
 def Inkproof.Gpu.Layer.stroke : Inkproof.Scene.DisplayList → Inkproof.Gpu.Layer
+def Inkproof.Gpu.Layer.strokeCut : Inkproof.Scene.DisplayList → List Inkproof.Gpu.Layer
+theorem Inkproof.Gpu.Layer.strokeCut_eq : ∀ (list : Inkproof.Scene.DisplayList), Inkproof.Gpu.Layer.strokeCut list = Inkproof.Gpu.Layer.cut (Inkproof.Gpu.tessellateStroke { x := 0, y := 0 }) list
 theorem Inkproof.Gpu.Layer.stroke_eq : ∀ (list : Inkproof.Scene.DisplayList), Inkproof.Gpu.Layer.stroke list = Inkproof.Gpu.Layer.build (Inkproof.Gpu.tessellateStroke { x := 0, y := 0 }) list
 theorem Inkproof.Gpu.Layer.stroke_sound : ∀ (list : Inkproof.Scene.DisplayList), Inkproof.Gpu.Layer.Sound (Inkproof.Gpu.tessellateStroke { x := 0, y := 0 }) (Inkproof.Gpu.Layer.stroke list)
 def Inkproof.Gpu.Layer.viewTile : Nat → Nat → Inkproof.Gpu.View → Inkproof.Scene.Rect → Inkproof.Gpu.Layer → Inkproof.Gpu.Tile
@@ -300,6 +309,7 @@ constructor Inkproof.Gpu.TileKey.view : Nat → Nat → Inkproof.Gpu.View → In
 structure Inkproof.Gpu.View : Type
 def Inkproof.Gpu.View.clip : Inkproof.Gpu.View → Inkproof.Scene.DisplayList → Inkproof.Scene.DisplayList
 theorem Inkproof.Gpu.View.clip_eq : ∀ (v : Inkproof.Gpu.View) (l : Inkproof.Scene.DisplayList), v.clip l = Array.map (fun c => { layer := c.layer, color := c.color, shape := Inkproof.Scene.Shape.clipped { x0 := v.x0, y0 := v.y0, x1 := v.x1, y1 := v.y1 } c.shape }) l
+theorem Inkproof.Gpu.View.clip_paintOrder : ∀ (v : Inkproof.Gpu.View) (list : Inkproof.Scene.DisplayList), (v.clip list).paintOrder = List.map (fun c => { layer := c.layer, color := c.color, shape := Inkproof.Scene.Shape.clipped { x0 := v.x0, y0 := v.y0, x1 := v.x1, y1 := v.y1 } c.shape }) list.paintOrder
 constructor Inkproof.Gpu.View.mk : Rat → Rat → Rat → Rat → Inkproof.Gpu.View
 field Inkproof.Gpu.View.x0 : Inkproof.Gpu.View → Rat
 field Inkproof.Gpu.View.x1 : Inkproof.Gpu.View → Rat
@@ -467,6 +477,11 @@ theorem Inkproof.Gpu.jsRunCase_eq : ∀ (s : Inkproof.Gpu.Spec), Inkproof.Gpu.js
 def Inkproof.Gpu.jsSpecCase : Inkproof.Gpu.Spec → String
 theorem Inkproof.Gpu.jsSpecCase_eq : ∀ (s : Inkproof.Gpu.Spec), Inkproof.Gpu.jsSpecCase s = ToString.toString " case " ++ ToString.toString s.op ++ ToString.toString ": return { op: " ++ ToString.toString s.op ++ ToString.toString ", name: \"" ++ ToString.toString s.name ++ ToString.toString "\", args: [" ++ ToString.toString (", ".intercalate (List.map Inkproof.Gpu.FieldTy.jsRead s.fields)) ++ ToString.toString "] };"
 def Inkproof.Gpu.layerPiece : Inkproof.Gpu.TileKey → Inkproof.Gpu.Layer → Nat → Inkproof.Gpu.Piece
+def Inkproof.Gpu.layerRuns : List Inkproof.Scene.Command → List (List Inkproof.Scene.Command)
+def Inkproof.Gpu.layerRunsStep : Inkproof.Scene.Command → List (List Inkproof.Scene.Command) → List (List Inkproof.Scene.Command)
+theorem Inkproof.Gpu.layerRunsStep_cons : ∀ (c : Inkproof.Scene.Command) (g : List Inkproof.Scene.Command) (gs : List (List Inkproof.Scene.Command)), Inkproof.Gpu.layerRunsStep c (g :: gs) = if (Option.map (fun x => x.layer) g.head? == Option.some c.layer) = Bool.true then (c :: g) :: gs else [c] :: g :: gs
+theorem Inkproof.Gpu.layerRunsStep_nil : ∀ (c : Inkproof.Scene.Command), Inkproof.Gpu.layerRunsStep c [] = [[c]]
+theorem Inkproof.Gpu.layerRuns_spec : ∀ (cs : List Inkproof.Scene.Command), (Inkproof.Gpu.layerRuns cs).flatten = cs ∧ ∀ (g : List Inkproof.Scene.Command), g ∈ Inkproof.Gpu.layerRuns cs → ∀ (x : Inkproof.Scene.Command), x ∈ g → ∀ (y : Inkproof.Scene.Command), y ∈ g → x.layer = y.layer
 def Inkproof.Gpu.le32 : UInt32 → List UInt8
 theorem Inkproof.Gpu.mem_itemsOps : ∀ (prev : Option Inkproof.Gpu.Gradient) (L : List Inkproof.Gpu.Item) (o : Inkproof.Gpu.Op), o ∈ Inkproof.Gpu.itemsOps prev L → ∃ i, i ∈ L ∧ o ∈ Inkproof.Gpu.Item.ops Option.none i
 def Inkproof.Gpu.octagonVertices : Inkproof.Scene.Pt → Inkproof.Scene.Pt → List Inkproof.Gpu.Vtx
