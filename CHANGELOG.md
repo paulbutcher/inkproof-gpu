@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.25.0]
+
+- `Layer.cut` and `Layer.strokeCut` cut a display list into per-layer pieces; drawing them layer by layer paints what the whole list paints (`Layer.cut_draws`, `Layer.cut_viewDraws`).
+
 ## [0.24.1]
 
 - `tessellateStroke` of a strip of thousands of values no longer overflows the stack in the browser.
