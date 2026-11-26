@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.26.0]
+
+- `Layer.cutMany` cuts several display lists by layer together, one piece per list on every layer (`Layer.cutMany_draws`, `Layer.cutMany_viewDraws`).
+
 ## [0.25.0]
 
 - `Layer.cut` and `Layer.strokeCut` cut a display list into per-layer pieces; drawing them layer by layer paints what the whole list paints (`Layer.cut_draws`, `Layer.cut_viewDraws`).
