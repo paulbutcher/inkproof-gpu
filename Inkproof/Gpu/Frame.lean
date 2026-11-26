@@ -163,6 +163,24 @@ def Layer.cut (tess : Scene.Command → List UInt32) (list : Scene.DisplayList) 
 def Layer.strokeCut (list : Scene.DisplayList) : List Layer :=
   Layer.cut (tessellateStroke ⟨0, 0⟩) list
 
+/-- `a` among the strictly ascending `ks`, once. -/
+def insertKey (a : Nat) : List Nat → List Nat
+  | [] => [a]
+  | b :: ks => if a < b then a :: b :: ks else if a = b then b :: ks else b :: insertKey a ks
+
+/-- The distinct numbers of `ns`, ascending. -/
+def layerKeys (ns : List Nat) : List Nat :=
+  ns.foldr insertKey []
+
+/-- Display lists cut into layers by `Command.layer` number together: for each number on a command of any of `lists`, lowest first, one layer per list (empty where that list has none on that number), each tessellated by `tess` once. Drawn in order, flattened, the layers paint what the lists concatenated paint, so index `j` of every group is list `j`. -/
+def Layer.cutMany (tess : Scene.Command → List UInt32) (lists : List Scene.DisplayList) : List (List Layer) :=
+  (layerKeys (lists.flatMap fun l => l.toList.map (·.layer))).map fun k =>
+    lists.map fun l => Layer.build tess (l.filter fun c => c.layer == k)
+
+/-- `Layer.cutMany` with `tessellateStroke`, as `Layer.strokeCut` is `Layer.cut`. -/
+def Layer.strokeCutMany (lists : List Scene.DisplayList) : List (List Layer) :=
+  Layer.cutMany (tessellateStroke ⟨0, 0⟩) lists
+
 /-- The tile of a layer in device pixels, as `pixelStrokeTile` but with the layer's words. -/
 def Layer.pixelTile (w h : Nat) (l : Layer) : Tile :=
   { Inkproof.Gpu.pixelStrokeTile w h l.list with words := some l.words }
