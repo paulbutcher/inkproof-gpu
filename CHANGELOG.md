@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.26.1]
+
+- `DESIGN.md` records why `layerRuns` and `layerKeys` stay rather than using core's list functions.
+
 ## [0.26.0]
 
 - `Layer.cutMany` cuts several display lists by layer together, one piece per list on every layer (`Layer.cutMany_draws`, `Layer.cutMany_viewDraws`).
